@@ -1,7 +1,9 @@
 package main
 
 import (
+	"compress/flate"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +13,58 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+func TestWebSocketDecodedInputLimit(t *testing.T) {
+	for _, compressed := range []bool{false, true} {
+		sizes := []int{512, 513}
+		if compressed {
+			sizes = append(sizes, 400000)
+		}
+		for _, size := range sizes {
+			t.Run(fmt.Sprintf("compressed=%v/bytes=%d", compressed, size), func(t *testing.T) {
+				g := NewGame()
+				s := &Server{game: g, clients: make(map[*Client]bool)}
+				httpServer := httptest.NewServer(http.HandlerFunc(s.handleWS))
+				defer httpServer.Close()
+				dialer := websocket.Dialer{EnableCompression: compressed}
+				conn, resp, err := dialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http"), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = conn.Close() }()
+				if compressed && !strings.Contains(resp.Header.Get("Sec-WebSocket-Extensions"), "permessage-deflate") {
+					t.Fatal("test connection did not negotiate compression")
+				}
+				if err := conn.SetCompressionLevel(flate.BestCompression); err != nil {
+					t.Fatal(err)
+				}
+				_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+				if _, _, err := conn.ReadMessage(); err != nil { // welcome
+					t.Fatal(err)
+				}
+				const prefix = `{"t":"join","team":"F","ship":"CA","name":"`
+				const suffix = `"}`
+				data := []byte(prefix + strings.Repeat("x", size-len(prefix)-len(suffix)) + suffix)
+				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+					t.Fatal(err)
+				}
+				_, reply, err := conn.ReadMessage()
+				if size > 512 {
+					if !websocket.IsCloseError(err, websocket.CloseMessageTooBig) {
+						t.Fatalf("oversize input was not rejected: reply=%s err=%v", reply, err)
+					}
+					return
+				}
+				var envelope struct {
+					T string `json:"t"`
+				}
+				if err != nil || json.Unmarshal(reply, &envelope) != nil || envelope.T != "joined" {
+					t.Fatalf("valid input was not accepted: reply=%s err=%v", reply, err)
+				}
+			})
+		}
+	}
+}
 
 func TestNormalizeDirectionAndRound3StayFinite(t *testing.T) {
 	d, ok := normalizeDirection(1e308)

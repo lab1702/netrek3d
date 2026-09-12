@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -30,11 +31,12 @@ type Client struct {
 }
 
 const (
-	maxWSClients = MaxPlayers
-	writeWait    = 10 * time.Second
-	pongWait     = 60 * time.Second
-	pingPeriod   = pongWait * 9 / 10
-	joinWait     = 2 * time.Minute
+	maxWSClients  = MaxPlayers
+	maxInputBytes = 512
+	writeWait     = 10 * time.Second
+	pongWait      = 60 * time.Second
+	pingPeriod    = pongWait * 9 / 10
+	joinWait      = 2 * time.Minute
 )
 
 var upgrader = websocket.Upgrader{
@@ -262,7 +264,7 @@ func (c *Client) readPump() {
 		close(c.send)
 		c.srv.mu.Unlock()
 	}()
-	c.conn.SetReadLimit(512)
+	c.conn.SetReadLimit(maxInputBytes)
 	joinBy := time.Now().Add(joinWait)
 	joined := false
 	_ = c.conn.SetReadDeadline(joinBy)
@@ -274,8 +276,20 @@ func (c *Client) readPump() {
 		return c.conn.SetReadDeadline(deadline)
 	})
 	for {
-		_, data, err := c.conn.ReadMessage()
+		_, reader, err := c.conn.NextReader()
 		if err != nil {
+			return
+		}
+		// Gorilla's read limit applies to wire bytes. Bound decoded input too,
+		// before allocating or parsing a compressed message in full.
+		data, err := io.ReadAll(io.LimitReader(reader, maxInputBytes+1))
+		if err != nil {
+			return
+		}
+		if len(data) > maxInputBytes {
+			_ = c.conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseMessageTooBig, "input too large"),
+				time.Now().Add(writeWait))
 			return
 		}
 		var m inMsg
