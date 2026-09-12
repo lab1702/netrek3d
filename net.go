@@ -195,6 +195,11 @@ type wireEvents struct {
 	Chats   []Chat     `json:"chats,omitempty"`
 }
 
+type wireLobby struct {
+	T      string         `json:"t"`
+	Counts map[string]int `json:"counts"`
+}
+
 func (s *Server) reserveClient() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -445,6 +450,7 @@ func (s *Server) broadcast() {
 		Booms: append([]Boom{}, g.booms...), Phasers: append([]PhaserFx{}, g.phasers...),
 	}
 	chats := append([]Chat{}, g.chats...)
+	lobby, _ := json.Marshal(wireLobby{T: "lobby", Counts: snap.Counts})
 
 	// sends happen under s.mu so a disconnecting client can't close its channel
 	// mid-fanout; the sends are non-blocking so holding the lock is safe
@@ -458,6 +464,7 @@ func (s *Server) broadcast() {
 	for c := range s.clients {
 		p := c.player
 		if p == nil {
+			c.queueSnapshot(lobby)
 			continue
 		}
 		mine := snap

@@ -299,6 +299,37 @@ func TestEnvironmentalExplosionCreditBelongsToExplodingShip(t *testing.T) {
 	}
 }
 
+func TestSelfDestructQuitKeepsTeamSafeSplash(t *testing.T) {
+	for _, team := range teamLetters {
+		t.Run(team, func(t *testing.T) {
+			g := NewGame()
+			exploding := addPlayer(t, g, "quitter", team, "CA").player
+			mate := addPlayer(t, g, "teammate", team, "CA").player
+			enemyTeam := teamLetters[(exploding.Team+1)%4]
+			enemy := addPlayer(t, g, "enemy", enemyTeam, "CA").player
+			exploding.X, exploding.Y = 50000, 50000
+			mate.X, mate.Y = exploding.X, exploding.Y
+			enemy.X, enemy.Y = exploding.X, exploding.Y
+			exploding.SelfDest = 1
+			g.tick = 1
+			g.checkSelfDestruct(exploding)
+			g.Command(exploding, "quit", 0, 0)
+			if exploding.Team != TeamNone {
+				t.Fatal("quit did not release team membership")
+			}
+			for range 3 {
+				g.Tick()
+			}
+			if mate.Shield != mate.Ship.MaxShield || mate.Damage != 0 {
+				t.Fatalf("teammate took quit splash: shield=%d damage=%d", mate.Shield, mate.Damage)
+			}
+			if enemy.Shield == enemy.Ship.MaxShield && enemy.Damage == 0 {
+				t.Fatal("quit incorrectly canceled the enemy splash")
+			}
+		})
+	}
+}
+
 func TestBotScuttleDoesNotUseGreenAlertShortcut(t *testing.T) {
 	g := NewGame()
 	if !g.addBot(TeamFed) {

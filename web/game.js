@@ -29,17 +29,22 @@ const nameInput = document.getElementById("name");
 nameInput.value = localStorage.nfpName || "";
 
 function buildJoinUI(counts) {
-  teamsP.innerHTML = "";
-  for (const tm of ["F", "R", "K", "O"]) {
-    const b = document.createElement("button");
-    b.className = `l7-btn l7-btn--outline btn-sm sel-${tm}`; // sel-* gated by .sel
-    const n = counts ? (counts[tm] || 0) : 0;
-    b.textContent = `${TEAM_NAMES[tm]} (${n})`;
-    b.style.color = TEAM_CSS[tm]; // team colors are the game's, not the system's
+  if (!teamsP.childElementCount) {
+    for (const tm of ["F", "R", "K", "O"]) {
+      const b = document.createElement("button");
+      b.className = `l7-btn l7-btn--outline btn-sm sel-${tm}`; // sel-* gated by .sel
+      b.style.color = TEAM_CSS[tm]; // team colors are the game's, not the system's
+      b.onclick = () => { selTeam = tm; refreshSel(); };
+      b.dataset.team = tm;
+      teamsP.appendChild(b);
+    }
+  }
+  // Update in place so live counts preserve selection and keyboard focus.
+  for (const b of teamsP.children) {
+    const tm = b.dataset.team, n = counts ? (counts[tm] || 0) : 0;
+    const label = `${TEAM_NAMES[tm]} (${n})`;
+    if (b.textContent !== label) b.textContent = label;
     b.disabled = n >= 32;
-    b.onclick = () => { selTeam = tm; refreshSel(); };
-    b.dataset.team = tm;
-    teamsP.appendChild(b);
   }
   if (!shipsP.childElementCount) {
     for (const st of SHIP_TYPES) {
@@ -159,6 +164,9 @@ function handle(m) {
       planets = m.planets;
       buildJoinUI(m.counts);
       break;
+    case "lobby":
+      if (!joined) buildJoinUI(m.counts);
+      break;
     case "joined":
       myId = m.id;
       joined = true;
@@ -183,13 +191,13 @@ function handle(m) {
         joined = false;
         joinDiv.style.display = "flex";
         joinMsg.textContent = "ship destroyed";
-        buildJoinUI(m.counts);
       } else if (m.you.st === "alive" && !joined) {
         // self-heal if the joined reply was lost: the server thinks we fly
         myId = m.you.i;
         joined = true;
         joinDiv.style.display = "none";
       }
+      if (!joined) buildJoinUI(m.counts);
       break;
     }
   }
@@ -277,7 +285,7 @@ function bearingFromScreen(mx, my, you) {
 
 addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 addEventListener("contextmenu", e => e.preventDefault());
-addEventListener("mousedown", e => {
+glCanvas.addEventListener("mousedown", e => {
   if (!joined || !curSnap) return;
   const you = interpYou();
   const d = bearingFromScreen(e.clientX, e.clientY, you);

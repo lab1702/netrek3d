@@ -2,6 +2,28 @@ package main
 
 import "testing"
 
+func TestRepairingBotCanDefendPlanet(t *testing.T) {
+	g := NewGame()
+	g.AddBotCmd("F")
+	p := g.players[0]
+	pl := g.planets[0]
+	p.X, p.Y = pl.X, pl.Y
+	p.RepairMode = true
+	p.Orbiting = pl.N
+	p.Bot.Cooldown = 0
+	enemy := addPlayer(t, g, "attacker", "R", "CA").player
+	enemy.X, enemy.Y = pl.X+1000, pl.Y
+
+	g.updateBot(p)
+
+	if p.RepairMode || p.Orbiting >= 0 {
+		t.Fatalf("defender did not leave repair orbit: repair=%v orbit=%d", p.RepairMode, p.Orbiting)
+	}
+	if p.NTorps == 0 && len(g.phasers) == 0 {
+		t.Fatal("defender did not fire at the nearby attacker")
+	}
+}
+
 func TestBotLifecycle(t *testing.T) {
 	g := NewGame()
 	g.clientsOnline = 1

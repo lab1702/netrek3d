@@ -101,6 +101,34 @@ func TestBroadcastUsesLatestSnapshotAndReliableEvents(t *testing.T) {
 	}
 }
 
+func TestLobbyReceivesLatestTeamCounts(t *testing.T) {
+	g := NewGame()
+	c := &Client{send: make(chan []byte, 4), snap: make(chan []byte, 1)}
+	s := &Server{game: g, clients: map[*Client]bool{c: true}}
+	g.AddBotCmd("F")
+	s.broadcast()
+	g.RemoveBotCmd("F")
+	s.broadcast()
+	select {
+	case data := <-c.snap:
+		var lobby struct {
+			T      string         `json:"t"`
+			Counts map[string]int `json:"counts"`
+		}
+		if err := json.Unmarshal(data, &lobby); err != nil {
+			t.Fatal(err)
+		}
+		if lobby.T != "lobby" || lobby.Counts["F"] != 0 {
+			t.Fatalf("stale lobby counts: %+v", lobby)
+		}
+	default:
+		t.Fatal("unjoined client did not receive updated team counts")
+	}
+	if g.clientsOnline != 0 {
+		t.Fatal("lobby connection was counted as a joined human")
+	}
+}
+
 func TestReliableQueueOverflowFailsInsteadOfDropping(t *testing.T) {
 	c := &Client{send: make(chan []byte, 1)}
 	if !c.queueReliable([]byte("first")) {

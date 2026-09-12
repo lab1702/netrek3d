@@ -112,6 +112,7 @@ type Player struct {
 	NTorps        int
 	PhaserBusy    int // ticks until phaser ready
 	ExplodeTicks  int
+	ExplodeTeam   int // allegiance at death; quit may release Team before splash
 	LastTorpTick  int64
 	WhoDead       *Player // stable killer identity for explosion-chain credit
 	WhoDeadTeam   int     // killer's team when the fatal damage landed
@@ -276,6 +277,7 @@ func (g *Game) spawn(p *Player) {
 	}
 	p.PhaserBusy = 0
 	p.ExplodeTicks = 0
+	p.ExplodeTeam = TeamNone
 	p.LastTorpTick = -1
 	p.WhoDead = nil
 	p.WhoDeadTeam = TeamNone
@@ -584,6 +586,7 @@ func (g *Game) hurt(v *Player, dmg int, killer *Player, killerTeam int, why stri
 func (g *Game) kill(v *Player, killer *Player, killerTeam int, why string) {
 	v.Status = "explode"
 	v.ExplodeTicks = 10
+	v.ExplodeTeam = v.Team
 	v.WhoDead = killer
 	v.WhoDeadTeam = killerTeam
 	v.WhoDeadDirect = why == "phaser" || why == "torp"
@@ -983,7 +986,7 @@ func (g *Game) blowup(v *Player) {
 		if p == nil || p == v || p.Status != "alive" {
 			continue
 		}
-		if v.SelfKill && p.Team == v.Team {
+		if v.SelfKill && p.Team == v.ExplodeTeam {
 			continue // KQUIT explosions spare teammates (daemon.c:3566)
 		}
 		dist := math.Hypot(p.X-v.X, p.Y-v.Y)
@@ -998,7 +1001,7 @@ func (g *Game) blowup(v *Player) {
 		// splash victim is neither that killer nor one of that killer's teammates.
 		// Otherwise the exploding ship owns the blast, including environmental,
 		// self-destruct, genocide, and already-chained deaths.
-		credit, creditTeam := v, v.Team
+		credit, creditTeam := v, v.ExplodeTeam
 		if v.WhoDeadDirect && v.WhoDead != nil && v.WhoDead.Team == v.WhoDeadTeam &&
 			p != v.WhoDead && p.Team != v.WhoDeadTeam {
 			credit, creditTeam = v.WhoDead, v.WhoDeadTeam
