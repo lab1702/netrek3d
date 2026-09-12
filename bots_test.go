@@ -522,6 +522,18 @@ func TestBotWar(t *testing.T) {
 	g := NewGame()
 	g.clientsOnline = 1
 	g.BalanceBots()
+	for i := 0; i < 10; i++ {
+		g.Tick()
+	}
+	if !g.tmode {
+		t.Fatal("bot 4v4 should have entered t-mode")
+	}
+	// T-mode replaces the warmup galaxy. Measure activity from that reset,
+	// so changing the starting army count alone cannot satisfy the assertion.
+	initialPlanets := make([]Planet, len(g.planets))
+	for i, pl := range g.planets {
+		initialPlanets[i] = *pl
+	}
 
 	torpsFired, phaserShots := 0, 0
 	for i := 0; i < 3000; i++ { // 5 minutes at 10 Hz
@@ -543,7 +555,7 @@ func TestBotWar(t *testing.T) {
 	if torpsFired == 0 {
 		t.Error("bots never fired a torpedo in 5 minutes")
 	}
-	kills, bombing := 0.0, 0
+	kills, touched := 0.0, 0
 	alive := 0
 	for _, p := range g.players {
 		if p == nil {
@@ -554,9 +566,9 @@ func TestBotWar(t *testing.T) {
 		}
 		kills += p.Kills
 	}
-	for _, pl := range g.planets {
-		if pl.Armies != topArmies || pl.Owner == TeamNone {
-			bombing++
+	for i, pl := range g.planets {
+		if pl.Armies != initialPlanets[i].Armies || pl.Owner != initialPlanets[i].Owner {
+			touched++
 		}
 	}
 	if alive == 0 {
@@ -565,9 +577,9 @@ func TestBotWar(t *testing.T) {
 	// evidence of the planet game: armies changed somewhere (bombing, beaming,
 	// growth) — with 3000 ticks of popPlanet alone this is virtually certain,
 	// so a zero means the tick loop wedged
-	if bombing == 0 {
+	if touched == 0 {
 		t.Error("galaxy completely untouched after 5 minutes")
 	}
 	t.Logf("after 5 min: alive=%d kills=%.2f torp-ticks=%d phaser-events=%d touched-planets=%d",
-		alive, kills, torpsFired, phaserShots, bombing)
+		alive, kills, torpsFired, phaserShots, touched)
 }
