@@ -924,11 +924,19 @@ func (g *Game) freeTorp(t *Torp) {
 func (g *Game) explodeTorp(t *Torp) {
 	g.freeTorp(t)
 	g.booms = append(g.booms, Boom{t.X, t.Y, 0.35})
+	detterTeam := TeamNone
+	if t.detter != nil {
+		detterTeam = t.detter.Team
+		if t.detter == t.owner {
+			// Wall impacts retain the firing team even after the owner quits.
+			detterTeam = t.Team
+		}
+	}
 	for _, p := range g.players {
 		if p == nil || p.Status != "alive" || p == t.owner {
 			continue
 		}
-		if t.detter != nil && p != t.detter && p.Team == t.detter.Team {
+		if t.detter != nil && p != t.detter && p.Team == detterTeam {
 			continue // TDETTEAMSAFE — but the detter himself eats the blast
 		}
 		dist := math.Hypot(p.X-t.X, p.Y-t.Y)
@@ -941,7 +949,7 @@ func (g *Game) explodeTorp(t *Torp) {
 		}
 		credit, creditTeam := t.owner, t.Team
 		if t.detter != nil && p != t.detter {
-			credit, creditTeam = t.detter, t.detter.Team // detted torp kills credit the detter...
+			credit, creditTeam = t.detter, detterTeam // detted torp kills credit the detter...
 		} // ...except when it kills the detter: that one is the owner's
 		g.hurt(p, dmg, credit, creditTeam, "torp")
 	}

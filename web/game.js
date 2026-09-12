@@ -44,7 +44,8 @@ function buildJoinUI(counts) {
     const tm = b.dataset.team, n = counts ? (counts[tm] || 0) : 0;
     const label = `${TEAM_NAMES[tm]} (${n})`;
     if (b.textContent !== label) b.textContent = label;
-    b.disabled = n >= 32;
+    const ownSlot = curSnap && curSnap.you.i === myId && curSnap.you.tm === tm;
+    b.disabled = n >= 32 && !ownSlot;
   }
   if (!shipsP.childElementCount) {
     for (const st of SHIP_TYPES) {
@@ -152,6 +153,7 @@ function connect() {
     location.host + base + "ws");
   ws.onmessage = e => handle(JSON.parse(e.data));
   ws.onclose = () => {
+    myId = -1; // the disconnected socket no longer reserves a team slot
     joined = false; joinDiv.style.display = "flex";
     joinMsg.textContent = "disconnected — retrying...";
     setTimeout(connect, 2000);

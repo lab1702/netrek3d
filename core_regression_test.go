@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func orbitAtForCoreTest(t *testing.T, g *Game, p *Player, planet int) {
 	t.Helper()
@@ -152,6 +155,32 @@ func TestTorpOwnershipDoesNotFollowReusedSlot(t *testing.T) {
 	}
 	if replacement.Shield == replacement.Ship.MaxShield {
 		t.Fatal("replacement was incorrectly immune because it reused the owner slot")
+	}
+}
+
+func TestWallHitTorpKeepsFiringTeamAfterQuit(t *testing.T) {
+	g := NewGame()
+	shooter := addPlayer(t, g, "shooter", "F", "CA").player
+	mate := addPlayer(t, g, "mate", "F", "CA").player
+	enemy := addPlayer(t, g, "enemy", "R", "CA").player
+	shooter.X, shooter.Y = 50, 50000
+	mate.X, mate.Y = 100, 50000
+	enemy.X, enemy.Y = 100, 50500
+	g.fireTorp(shooter, math.Pi)
+	g.Command(shooter, "quit", 0, 0)
+	if shooter.Team != TeamNone || len(g.torps) != 1 {
+		t.Fatal("quit should release the team while the fired torpedo survives")
+	}
+
+	g.moveTorps()
+	if len(g.torps) != 0 || shooter.NTorps != 0 {
+		t.Fatal("wall impact should explode and release the torpedo")
+	}
+	if mate.Shield != mate.Ship.MaxShield || mate.Damage != 0 {
+		t.Fatalf("wall explosion damaged a former teammate: shield=%d damage=%d", mate.Shield, mate.Damage)
+	}
+	if enemy.Shield == enemy.Ship.MaxShield {
+		t.Fatal("wall explosion should still damage nearby enemies")
 	}
 }
 
