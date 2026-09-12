@@ -508,7 +508,7 @@ function drawMap(you, players) {
     if (pl.f & 4) { ctx.fillStyle = "#8d6e63"; ctx.fillText("agri", x, y + 25); }
   }
   for (const p of players) {
-    if (p.st !== "alive" || p.cl) continue;
+    if (p.st !== "alive" || (p.cl && p.i !== myId)) continue;
     const x = ox + p.x / GWIDTH * sz, y = oy + p.y / GWIDTH * sz;
     ctx.strokeStyle = ctx.fillStyle = TEAM_CSS[p.tm];
     ctx.save();
