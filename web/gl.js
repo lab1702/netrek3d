@@ -14,6 +14,8 @@ const PLANET_FADE = 18000, PLANET_MAX = 25000;
 const SHIP_FADE = 10000, SHIP_MAX = 20000; // matches the minimap radar range
 const BOOM_MAX = 30000; // distant battle flashes, but not cross-galaxy
 const SHIP_SCALE = 140;
+// Keep fragment lighting vectors and their squared lengths in mediump range.
+const LIGHT_SCALE = 1 / 2048;
 
 // ---------- matrix helpers (column-major mat4) ----------
 function mat4Perspective(fovy, aspect, near, far) {
@@ -46,27 +48,30 @@ function mat4Model(x, y, z, yaw, s) {
 // ---------- shaders ----------
 const MESH_VS = `
 attribute vec3 aPos; attribute vec3 aNorm;
-uniform mat4 uPV, uModel; varying vec3 vNorm; varying vec3 vWorld;
+uniform mat4 uPV, uModel; uniform vec3 uEye;
+varying mediump vec3 vNorm; varying mediump vec3 vRelative;
 void main() { vec4 w = uModel * vec4(aPos, 1.0);
-  gl_Position = uPV * w; vWorld = w.xyz;
-  vNorm = mat3(uModel[0].xyz, uModel[1].xyz, uModel[2].xyz) * aNorm; }`;
+  gl_Position = uPV * w; vRelative = (w.xyz - uEye) * ${LIGHT_SCALE};
+  vNorm = normalize(mat3(uModel[0].xyz, uModel[1].xyz, uModel[2].xyz) * aNorm); }`;
 const MESH_FS = `
 precision mediump float;
 uniform vec4 uColor; uniform vec3 uLight; uniform float uEmissive;
-uniform vec3 uEye; uniform float uSpec;
+uniform float uSpec;
 uniform vec3 uBoomPos[4]; uniform vec4 uBoomCol[4]; // rgb premultiplied, w = radius
-varying vec3 vNorm; varying vec3 vWorld;
+varying mediump vec3 vNorm; varying mediump vec3 vRelative;
 void main() {
   vec3 n = normalize(vNorm);
   vec3 c = uColor.rgb * (0.30 + 0.75 * max(dot(n, uLight), 0.0));
   // Blinn-Phong sun glint: white, view-dependent, strength per object type
-  vec3 h = normalize(uLight + normalize(uEye - vWorld));
+  vec3 h = normalize(uLight + normalize(-vRelative));
   c += uSpec * pow(max(dot(n, h), 0.0), 32.0);
   for (int i = 0; i < 4; i++) {
-    vec3 dv = uBoomPos[i] - vWorld;
-    float dist = max(length(dv), 1.0);
-    float att = max(1.0 - dist / max(uBoomCol[i].w, 1.0), 0.0);
-    c += uColor.rgb * uBoomCol[i].rgb * max(dot(n, dv / dist), 0.0) * att * att;
+    vec3 dv = uBoomPos[i] - vRelative;
+    float dist = max(length(dv), ${LIGHT_SCALE});
+    if (dist < uBoomCol[i].w) {
+      float att = 1.0 - dist / uBoomCol[i].w;
+      c += uColor.rgb * uBoomCol[i].rgb * max(dot(n, dv / dist), 0.0) * att * att;
+    }
   }
   gl_FragColor = vec4(mix(c, uColor.rgb, uEmissive), uColor.a);
 }`;
@@ -79,7 +84,7 @@ const POINT_FS = `
 precision mediump float; varying vec4 vColor;
 void main() { vec2 d = gl_PointCoord - 0.5; float r = length(d) * 2.0;
   if (r > 1.0) discard;
-  gl_FragColor = vec4(vColor.rgb, vColor.a * smoothstep(1.0, 0.6, r)); }`;
+  gl_FragColor = vec4(vColor.rgb, vColor.a * (1.0 - smoothstep(0.6, 1.0, r))); }`;
 const LINE_VS = `
 attribute vec3 aPos; attribute vec4 aColor; uniform mat4 uPV; varying vec4 vColor;
 void main() { gl_Position = uPV * vec4(aPos, 1.0); vColor = aColor; }`;
@@ -234,12 +239,15 @@ Renderer.prototype.begin = function (cx, cy, yaw, boomLights) {
   this.points = [];   // accumulated point sprites: x,y,z, r,g,b,a, size
   this.lines = [];    // accumulated lines: x,y,z, r,g,b,a per vertex
 
-  // upload explosion lights once per frame (unused slots have radius 0)
+  // Lighting uses scaled, camera-relative coordinates in the fragment shader.
+  // Upload explosion lights once per frame (unused slots have radius 0).
   const pos = new Float32Array(12), col = new Float32Array(16);
   (boomLights || []).slice(0, 4).forEach((b, i) => {
-    pos[i * 3] = b.x; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = b.y;
+    pos[i * 3] = (b.x - cx) * LIGHT_SCALE;
+    pos[i * 3 + 1] = -EYE_HEIGHT * LIGHT_SCALE;
+    pos[i * 3 + 2] = (b.y - cy) * LIGHT_SCALE;
     col[i * 4] = 1.0 * b.i; col[i * 4 + 1] = 0.6 * b.i; col[i * 4 + 2] = 0.3 * b.i;
-    col[i * 4 + 3] = b.r;
+    col[i * 4 + 3] = b.r * LIGHT_SCALE;
   });
   gl.useProgram(this.meshProg);
   gl.uniform3fv(this.loc.mesh.uBoomPos, pos);
