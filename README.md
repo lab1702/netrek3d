@@ -18,7 +18,10 @@ Classic ship classes, resources, army play, T-mode, and combat balance constants
 are inherited from the original project.
 
 The galactic map remains an X/Y tactical projection, with absolute Z labels. The
-local radar uses spherical range and labels relative altitude. Flight uses yaw and
+local radar is a tilted, heading-up 3D view with a 20k spherical range. Contacts
+above/below your altitude plane have vertical stems (dashed below); diamonds
+are ships and circles are planets. It stays vertically stable while pitching,
+and labels your planet lock and nearby threats with relative altitude. Flight uses yaw and
 pitch with a stable up direction; independent roll and strafing are not implemented.
 
 This project is developed separately in `lab1702/netrek3d`. The original repository
