@@ -153,6 +153,7 @@ function connect() {
     location.host + base + "ws");
   ws.onmessage = e => handle(JSON.parse(e.data));
   ws.onclose = () => {
+    stopHelm();
     myId = -1; // the disconnected socket no longer reserves a team slot
     joined = false; setMapOpen(false); joinDiv.style.display = "flex";
     joinMsg.textContent = "disconnected — retrying...";
@@ -183,6 +184,7 @@ function handle(m) {
       break;
     case "snap": {
       prevSnap = curSnap; curSnap = m; snapAt = performance.now();
+      if (m.you.st !== "alive") stopHelm();
       for (const p of m.planets) {
         const pl = planets[p.n]; pl.o = p.o; pl.a = p.a; pl.f = p.f;
       }
@@ -222,6 +224,7 @@ const chatInput = document.getElementById("chatInput");
 let chatTo = "team";
 
 function openChat(to) {
+  stopHelm();
   chatTo = to;
   chatBoxLabel.textContent = to.toUpperCase();
   chatBox.style.display = "flex";
@@ -279,6 +282,30 @@ function bearingFromScreen(mx, my, you) {
   return { d: Math.atan2(y, x), pitch: Math.atan2(z, Math.hypot(x, y)) };
 }
 
+const helm = new HoldSteering(send,
+  () => joined && !mapOn && curSnap?.you.st === "alive" && !document.hidden &&
+    document.activeElement !== chatInput,
+  () => ({width:innerWidth,height:innerHeight}));
+function stopHelm() {
+  const pointer = helm.pointer;
+  helm.stop();
+  if (pointer !== null && glCanvas.hasPointerCapture(pointer)) glCanvas.releasePointerCapture(pointer);
+}
+glCanvas.addEventListener("pointerdown", e => {
+  if (e.button !== 2) return;
+  if (helm.start(e.pointerId,e.clientX,e.clientY,performance.now())) {
+    glCanvas.setPointerCapture(e.pointerId);
+  }
+});
+addEventListener("pointermove", e => {
+  mouse.x=e.clientX;mouse.y=e.clientY;
+  helm.move(e.pointerId,e.clientX,e.clientY,e.buttons);
+});
+addEventListener("pointerup", e => { if(e.button===2)stopHelm(); });
+addEventListener("pointercancel", stopHelm);
+glCanvas.addEventListener("lostpointercapture", stopHelm);
+addEventListener("blur", stopHelm);
+document.addEventListener("visibilitychange", () => { if(document.hidden)stopHelm(); });
 addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 addEventListener("contextmenu", e => e.preventDefault());
 glCanvas.addEventListener("mousedown", e => {
@@ -288,7 +315,7 @@ glCanvas.addEventListener("mousedown", e => {
   if (mapOn) return;
   if (e.button === 0) send({ t: "torp", ...d });
   else if (e.button === 1) { send({ t: "phaser", ...d }); e.preventDefault(); }
-  else if (e.button === 2) send({ t: "course", ...d });
+
 });
 
 addEventListener("keydown", e => {
@@ -301,6 +328,7 @@ addEventListener("keydown", e => {
   // some input paths deliver shift+letter as the lowercase key with the
   // shift modifier set; derive the logical key instead of trusting e.key
   const key = e.shiftKey && e.key.length === 1 ? e.key.toUpperCase() : e.key;
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","h","l","o","R","Q","Escape"].includes(key)) stopHelm();
   switch (key) {
     case "ArrowUp": case "ArrowDown": case "ArrowLeft": case "ArrowRight":
       if (you) send({ t: "course", d: you.d + (key === "ArrowRight" ? 0.2 : key === "ArrowLeft" ? -0.2 : 0),
@@ -445,6 +473,7 @@ function fmtTime(s) {
 const galaxyMap = new GalaxyMap(mapCanvas, document.getElementById("galaxyUI"),
   id => send({ t: "lock", v: id }), () => setMapOpen(false));
 function setMapOpen(open) {
+  stopHelm();
   mapOn = open;
   galaxyMap.setOpen(open, planets);
   if (!open) document.activeElement?.blur();
@@ -478,6 +507,11 @@ function drawOverlay(labels, you, players) {
   ctx.moveTo(mouse.x, mouse.y - 10); ctx.lineTo(mouse.x, mouse.y - 3);
   ctx.moveTo(mouse.x, mouse.y + 3); ctx.lineTo(mouse.x, mouse.y + 10);
   ctx.stroke();
+  if (helm.active) {
+    ctx.strokeStyle = "#90a4ae";
+    ctx.beginPath(); ctx.arc(innerWidth/2,innerHeight/2,Math.min(innerWidth,innerHeight)*0.0175,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle = "#b0bec5";ctx.fillText("STEERING",innerWidth/2,innerHeight/2+32);
+  }
   // course marker: where the ship is heading
   const ahead = R.project(you.x + Math.cos(you.d)*Math.cos(you.pitch)*8000, you.z + Math.sin(you.pitch)*8000, you.y + Math.sin(you.d)*Math.cos(you.pitch)*8000);
   if (ahead) {
@@ -496,6 +530,7 @@ function frame() {
   const players = interpList(curSnap.players, prevSnap && prevSnap.players, f);
   const torps = interpList(curSnap.torps, prevSnap && prevSnap.torps, f);
   const now = performance.now();
+  helm.tick(now);
 
   // explosions emit light: nearest four active booms become point lights,
   // radius and intensity scaled by blast class (torp 0.35 ... starbase 2.0)

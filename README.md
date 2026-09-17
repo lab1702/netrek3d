@@ -83,7 +83,7 @@ team colors and all in-game rendering are historical and deliberately outside th
 
 | Input | Action |
 |---|---|
-| right-click | set yaw and pitch toward pointer |
+| hold right mouse | continuously steer yaw/pitch; farther from center turns faster within ship turn limits |
 | arrow keys | steer pitch up/down and yaw left/right |
 | `h` | level pitch at current altitude |
 | left-click / `t` | fire torpedo toward pointer |
@@ -105,6 +105,20 @@ team colors and all in-game rendering are historical and deliberately outside th
 | Esc | quit ship (or close bot panel) |
 
 You need kills to carry armies (2 per kill, 3 per kill in an Assault ship).
+
+## Continuous flight steering
+
+Hold the right mouse button and move the pointer away from the center to steer.
+The small center ring is a neutral zone; outside it, response increases smoothly
+with distance. Near-center input uses only part of the available turn rate; edge
+input uses the maximum allowed by your ship and warp speed, capped at 90°/second.
+The view stays vertically stable, with pitch limited to straight up/down.
+
+Release the button to hold the current heading. Steering also stops when opening
+the map or chat, switching to another navigation mode, or losing window focus.
+Throttle changes and weapon fire work while steering. The client sends input at
+10 Hz; the server integrates it at its own tick rate and stops if updates are
+missing for 500 ms. Steering never moves the ship directly on the client.
 
 ## Galactic map
 
@@ -142,6 +156,8 @@ rule and WebSocket regression tests remain in place.
 Protocol version 2 adds `z` to positions and `pitch` (radians, -π/2 through +π/2)
 to ship state and course/weapon commands. Phaser effects carry `fz` and `tz`;
 explosions carry `z`. The welcome message advertises `protocol: 2, dimensions: 3`.
+The `steer` command uses `v: 1` for held input, `d`/`pitch` for normalized
+horizontal/vertical axes, and `v: 0` to release at the server's current heading.
 Use this repository's client with its server; the old flat client is not supported.
 
 Design notes under `docs/superpowers/` describe the original flat-world project

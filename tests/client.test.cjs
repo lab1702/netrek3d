@@ -7,7 +7,7 @@ const root = path.join(__dirname, '..');
 const context = vm.createContext({innerWidth:1280,innerHeight:720});
 vm.runInContext(fs.readFileSync(path.join(root,'web/gl.js'),'utf8'),context);
 const game = fs.readFileSync(path.join(root,'web/game.js'),'utf8');
-vm.runInContext(game.slice(game.indexOf('function bearingFromScreen'),game.indexOf('addEventListener("mousemove"')),context);
+vm.runInContext(game.slice(game.indexOf('function bearingFromScreen'),game.indexOf('const helm =')),context);
 const close = (a,b) => assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
 test('center reticle and view matrix agree at every pitch, including poles',()=>{
  for (const pitch of [-Math.PI/2,-0.8,0,0.8,Math.PI/2]) {
@@ -173,4 +173,65 @@ test('galaxy renderer keeps planet labels, selection details, and finite geometr
  for(const [w,h]of[[320,640],[760,600],[1280,720]]) {
   const r=context.galaxyViewport(w,h);assert.ok(r.w>0&&r.h>0&&r.x+r.w<=w&&r.y+r.h<=h);
  }
+});
+
+vm.runInContext(fs.readFileSync(path.join(root,'web/steering.js'),'utf8'),context);
+test('held steering has a neutral center, progressive strength, and bounded diagonals',()=>{
+ const input=(x,y)=>context.steeringInput(x,y,1280,720);
+ close(input(640,360).d,0);close(input(645,365).pitch,0);
+ assert.ok(input(680,360).d>0);
+ assert.ok(input(680,360).d<input(800,360).d);
+ assert.ok(input(800,360).d<input(1000,360).d);
+ assert.ok(input(640,200).pitch>0);assert.ok(input(640,520).pitch<0);
+ close(input(480,360).d,-input(800,360).d);
+ const corner=input(1280,0);close(Math.hypot(corner.d,corner.pitch),1);
+ // Resizing keeps the same physical steering strength at equal radial offsets.
+ close(context.steeringInput(240,320,320,640).d,context.steeringInput(820,360,1280,720).d);
+});
+test('held steering repeats while stationary, is frame-rate independent, and stops on release',()=>{
+ const Steering=vm.runInContext('HoldSteering',context);
+ const collect=hz=>{
+  const sent=[];const helm=new Steering(m=>sent.push(m),()=>true,()=>({width:1280,height:720}));
+  helm.start(7,900,360,0);
+  for(let i=1;i<=hz;i++)helm.tick(i*1000/hz);
+  helm.stop();helm.tick(2000);
+  return sent;
+ };
+ const fast=collect(120),slow=collect(30);
+ assert.ok(Math.abs(fast.length-slow.length)<=1);
+ assert.ok(fast.length>=10 && fast.length<=12);
+ assert.equal(fast.at(-1).v,0);
+ assert.ok(fast.slice(0,-1).every(m=>m.t==='steer'&&m.v===1&&m.d>0));
+});
+test('lost right button and loss of control eligibility stop steering once',()=>{
+ const Steering=vm.runInContext('HoldSteering',context),sent=[];
+ let allowed=true;const helm=new Steering(m=>sent.push(m),()=>allowed,()=>({width:1000,height:800}));
+ helm.start(4,800,400,0);helm.move(9,100,400,0);assert.equal(helm.active,true);
+ helm.move(4,700,400,3);assert.equal(helm.active,true); // firing left while holding right
+ helm.move(4,700,400,1);assert.equal(helm.active,false);assert.equal(sent.at(-1).v,0);
+ const n=sent.length;helm.stop();helm.tick(1000);assert.equal(sent.length,n);
+ helm.start(4,800,400,1100);allowed=false;helm.tick(1200);
+ assert.equal(helm.active,false);assert.equal(sent.at(-1).v,0);
+ assert.equal(helm.start(4,800,400,1300),false);
+});
+
+test('cockpit pointer capture repeats held input and releases on button-up, blur, and hidden tab',()=>{
+ const events={},pointerEvents={},docEvents={},sent=[];
+ let captured=null;
+ const canvas={addEventListener:(k,f)=>{pointerEvents[k]=f;},setPointerCapture:id=>{captured=id;},
+  hasPointerCapture:id=>captured===id,releasePointerCapture:()=>{captured=null;pointerEvents.lostpointercapture();}};
+ const env=vm.createContext({send:m=>sent.push(m),joined:true,mapOn:false,curSnap:{you:{st:'alive'}},
+  document:{hidden:false,activeElement:null,addEventListener:(k,f)=>{docEvents[k]=f;}},chatInput:{},
+  innerWidth:1280,innerHeight:720,glCanvas:canvas,mouse:{},performance:{now:()=>0},
+  addEventListener:(k,f)=>{events[k]=f;}});
+ vm.runInContext(fs.readFileSync(path.join(root,'web/steering.js'),'utf8'),env);
+ vm.runInContext(game.slice(game.indexOf('const helm ='),game.indexOf('addEventListener("mousemove"')),env);
+ const down=()=>pointerEvents.pointerdown({button:2,pointerId:3,clientX:900,clientY:200});
+ down();assert.equal(captured,3);assert.equal(sent.at(-1).v,1);
+ vm.runInContext('helm.tick(100); helm.tick(200)',env);assert.equal(sent.length,3);
+ events.pointerup({button:0});assert.equal(sent.at(-1).v,1);
+ events.pointerup({button:2});assert.equal(captured,null);assert.equal(sent.at(-1).v,0);
+ down();events.blur();assert.equal(sent.at(-1).v,0);assert.equal(captured,null);
+ down();env.document.hidden=true;docEvents.visibilitychange();assert.equal(sent.at(-1).v,0);
+ const n=sent.length;down();assert.equal(sent.length,n);
 });

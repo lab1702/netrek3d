@@ -94,6 +94,9 @@ type Player struct {
 	Pitch, DesPitch float64
 	OrbitNormal     vec3
 	SubDir          int
+	Steering        bool
+	SteerX, SteerY  float64
+	SteerUntil      int64
 	Speed           int
 	DesSpeed        int
 	SubSpeed        int
@@ -294,6 +297,7 @@ func (g *Game) spawn(p *Player) {
 	p.SelfDest = 0
 	p.SelfKill = false
 	p.LockPlanet = -1
+	p.Steering, p.SteerX, p.SteerY, p.SteerUntil = false, 0, 0, 0
 	p.Status = "alive"
 }
 
@@ -341,7 +345,26 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int, pitches ...f
 		pitch = clampPitch(pitches[0])
 	}
 	switch cmd {
+	case "steer":
+		if val == 0 {
+			stopSteering(p)
+			return
+		}
+		if val != 1 {
+			return
+		}
+		y := 0.0
+		if len(pitches) > 0 {
+			y = pitches[0]
+		}
+		p.SteerX, p.SteerY = steeringAxes(dir, y)
+		p.Steering = true
+		p.SteerUntil = g.tick + 5 // 500 ms without input releases the helm
+		p.RepairMode = false
+		p.LockPlanet = -1
+		g.breakOrbit(p)
 	case "course":
+		stopSteering(p)
 		p.DesPitch = pitch
 		p.DesDir = dir
 		p.RepairMode = false
@@ -356,6 +379,7 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int, pitches ...f
 		if val < 0 || val >= len(g.planets) {
 			return
 		}
+		stopSteering(p)
 		p.LockPlanet = val
 		p.Bombing = false
 		p.Beaming = 0
@@ -374,6 +398,7 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int, pitches ...f
 	case "phaser":
 		g.firePhaser(p, dir, pitch)
 	case "orbit":
+		stopSteering(p)
 		g.enterOrbit(p)
 	case "bomb":
 		g.startBomb(p)
@@ -382,6 +407,7 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int, pitches ...f
 	case "beamdown":
 		g.startBeam(p, 2)
 	case "repair":
+		stopSteering(p)
 		p.RepairMode = !p.RepairMode
 		if p.RepairMode {
 			p.DesSpeed = 0
@@ -398,6 +424,7 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int, pitches ...f
 	case "det":
 		g.detEnemyTorps(p)
 	case "selfdestruct":
+		stopSteering(p)
 		// 10 s fuse, 60 s for a starbase (socket.c:1726)
 		fuse := int64(100)
 		if p.Ship.Type == "SB" {
@@ -406,6 +433,7 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int, pitches ...f
 		p.SelfDest = g.tick + fuse
 		g.say("%s: self destruct initiated", p.Name)
 	case "quit":
+		stopSteering(p)
 		p.Status = "dead"
 		p.Team = TeamNone
 	}
@@ -691,6 +719,9 @@ func (g *Game) Tick() {
 
 func (g *Game) movePlayer(p *Player) {
 	s := p.Ship
+	if p.Steering && g.tick >= p.SteerUntil {
+		stopSteering(p)
+	}
 
 	// planet lock: full autopilot (steering from Vanilla redraw.c:581, but the
 	// throttle is automatic too — shortest time to arrival). Slows only when
@@ -770,6 +801,13 @@ func (g *Game) movePlayer(p *Player) {
 		return
 	}
 
+	// A held steering input requests up to 90 degrees/second, independent of
+	// network/render frequency. The ordinary speed-dependent turn budget below
+	// still limits every change, including diagonal yaw/pitch input.
+	if p.Steering {
+		p.DesDir = math.Remainder(p.Dir+p.SteerX*math.Pi/20, 2*math.Pi)
+		p.DesPitch = clampPitch(p.Pitch + p.SteerY*math.Pi/20)
+	}
 	// Rotate along the shortest great-circle arc at the ship's turn rate.
 	if p.Speed == 0 {
 		p.Dir, p.Pitch, p.SubDir = p.DesDir, p.DesPitch, 0
@@ -778,7 +816,11 @@ func (g *Game) movePlayer(p *Player) {
 		ticks := p.SubDir / 1000
 		p.SubDir %= 1000
 		if ticks > 0 {
-			turnToward(p, float64(ticks)*ByteRad)
+			step := float64(ticks) * ByteRad
+			if p.Steering {
+				step = math.Min(step, math.Pi/20) * math.Hypot(p.SteerX, p.SteerY)
+			}
+			turnToward(p, step)
 		}
 	}
 	v := heading(p.Dir, p.Pitch).scale(float64(p.Speed * Warp1))

@@ -50,3 +50,27 @@ func turnToward(p *Player, step float64) {
 	v := a.scale(math.Cos(step)).add(tangent.scale(math.Sin(step)))
 	p.Dir, p.Pitch = math.Atan2(v.Y, v.X), math.Atan2(v.Z, math.Hypot(v.X, v.Y))
 }
+
+// steeringAxes accepts only a finite vector inside the unit control disc.
+func steeringAxes(x, y float64) (float64, float64) {
+	if math.IsNaN(x) || math.IsInf(x, 0) || math.IsNaN(y) || math.IsInf(y, 0) {
+		return 0, 0
+	}
+	x = math.Max(-1, math.Min(1, x))
+	y = math.Max(-1, math.Min(1, y))
+	if n := math.Hypot(x, y); n > 1 {
+		x /= n
+		y /= n
+	}
+	return x, y
+}
+func stopSteering(p *Player) {
+	if !p.Steering {
+		return
+	}
+	p.Steering = false
+	p.SteerX, p.SteerY, p.SteerUntil = 0, 0, 0
+	// Release holds the authoritative heading; no stale client snapshot can
+	// pull the nose backwards, and no pending absolute course keeps turning.
+	p.DesDir, p.DesPitch = p.Dir, p.Pitch
+}
