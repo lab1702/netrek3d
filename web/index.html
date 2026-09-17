@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>netrekfp</title>
+<title>netrek3d</title>
 <link rel="stylesheet" href="lab1702.css">
 <style>
   /* chrome follows the lab1702 design system; netrek team colors and all
@@ -113,13 +113,14 @@
 <div id="msgs"></div>
 <div id="hudLeft" class="hud"></div>
 <div id="hudRight" class="hud"></div>
-<div id="help" class="hud">right-click: course &middot; left: torp &middot; middle/f: phaser<br>
-0-9/=: warp &middot; s: shields &middot; o: orbit &middot; l: lock planet &middot; b: bomb &middot; z/x: beam up/down<br>
+<div id="altitude" class="hud" style="position:absolute;left:20px;top:100px"></div>
+<div id="help" class="hud">right-click: yaw + pitch course &middot; left: torp &middot; middle/f: phaser<br>
+↑/↓: pitch &middot; ←/→: yaw &middot; h: level<br>0-9/=: warp &middot; s: shields &middot; o: orbit &middot; l: lock planet &middot; b: bomb &middot; z/x: beam up/down<br>
 c: cloak &middot; d: det &middot; R: repair &middot; m: map &middot; p: players &middot; \: bots &middot; Q: self destruct<br>
 Enter: team chat &middot; shift+Enter: all chat</div>
 
 <div id="join"><div class="panel l7-card">
-  <h1>NETREK FP</h1>
+  <h1>NETREK 3D</h1>
   <p><input id="name" class="l7-input" maxlength="15" placeholder="call sign" autofocus></p>
   <p id="teams"></p>
   <p id="ships"></p>

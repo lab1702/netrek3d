@@ -34,7 +34,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	if dir := os.Getenv("NETREKFP_SHOTDIR"); dir != "" {
+	if dir := os.Getenv("NETREK3D_SHOTDIR"); dir != "" {
 		// dev only: lets the page dump its framebuffer for headless inspection
 		http.HandleFunc("/debug/shot", func(w http.ResponseWriter, r *http.Request) {
 			b, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
@@ -51,7 +51,7 @@ func main() {
 		}
 	}()
 
-	log.Printf("netrekfp listening on %s", *addr)
+	log.Printf("netrek3d listening on %s", *addr)
 	httpServer := &http.Server{
 		Addr:              *addr,
 		Handler:           http.DefaultServeMux,

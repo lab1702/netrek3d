@@ -1,5 +1,5 @@
 // gl.js — minimal raw-WebGL renderer for the cockpit view.
-// World mapping: netrek (x, y) -> world (x, z), Y is up, everything lives at y=0.
+// World mapping: netrek (x, y, z) -> WebGL (x, z, y); game Z is altitude.
 "use strict";
 
 const TEAM_COLORS = {
@@ -8,7 +8,7 @@ const TEAM_COLORS = {
 };
 
 const FOV = 65 * Math.PI / 180;
-const EYE_HEIGHT = 160;
+const EYE_HEIGHT = 0;
 const PLANET_RADIUS = 600;        // ORBDIST is 800, so orbits skim the surface
 const PLANET_FADE = 18000, PLANET_MAX = 25000;
 const SHIP_FADE = 10000, SHIP_MAX = 20000; // matches the minimap radar range
@@ -31,18 +31,16 @@ function mat4Mul(a, b) {
   }
   return o;
 }
-function mat4LookYaw(eye, yaw) {
-  // view matrix for camera at eye looking along (cos yaw, 0, sin yaw)
-  const fx = Math.cos(yaw), fz = Math.sin(yaw);
-  const rx = -fz, rz = fx; // right = forward x up
-  return [rx, 0, -fx, 0,
-          0, 1, 0, 0,
-          rz, 0, -fz, 0,
-          -(rx * eye[0] + rz * eye[2]), -eye[1], fx * eye[0] + fz * eye[2], 1];
+function mat4LookYaw(eye, yaw, pitch = 0) {
+  const c = Math.cos(yaw), n = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const f = [c*cp, sp, n*cp], r = [-n, 0, c], u = [-c*sp, cp, -n*sp];
+  const dot = v => v[0]*eye[0]+v[1]*eye[1]+v[2]*eye[2];
+  return [r[0],u[0],-f[0],0, r[1],u[1],-f[1],0, r[2],u[2],-f[2],0,
+          -dot(r),-dot(u),dot(f),1];
 }
-function mat4Model(x, y, z, yaw, s) {
-  const c = Math.cos(yaw), n = Math.sin(yaw);
-  return [c * s, 0, n * s, 0, 0, s, 0, 0, -n * s, 0, c * s, 0, x, y, z, 1];
+function mat4Model(x, y, z, yaw, s, pitch = 0) {
+  const c = Math.cos(yaw), n = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  return [c*cp*s,sp*s,n*cp*s,0, -c*sp*s,cp*s,-n*sp*s,0, -n*s,0,c*s,0,x,y,z,1];
 }
 
 // ---------- shaders ----------
@@ -224,16 +222,16 @@ Renderer.prototype.resize = function () {
   this.gl.viewport(0, 0, w, h);
 };
 
-// camera: netrek pos (x, y), yaw = dir (radians, velocity (cos, sin) in netrek coords)
-// boomLights: up to 4 explosion point lights [{x, y, i(ntensity), r(adius)}]
-Renderer.prototype.begin = function (cx, cy, yaw, boomLights) {
+// Camera position maps game altitude Z to WebGL Y; orientation uses yaw and pitch.
+// boomLights: up to 4 explosion point lights [{x, y, z, i(ntensity), r(adius)}]
+Renderer.prototype.begin = function (cx, cy, yaw, boomLights, cz = 0, pitch = 0) {
   const gl = this.gl;
   this.resize();
   this.aspect = this.canvas.width / this.canvas.height;
   this.proj = mat4Perspective(FOV, this.aspect, 20, 120000);
-  this.eye = [cx, EYE_HEIGHT, cy];
-  this.pv = mat4Mul(this.proj, mat4LookYaw(this.eye, yaw));
-  this.pvRot = mat4Mul(this.proj, mat4LookYaw([0, 0, 0], yaw));
+  this.eye = [cx, cz, cy];
+  this.pv = mat4Mul(this.proj, mat4LookYaw(this.eye, yaw, pitch));
+  this.pvRot = mat4Mul(this.proj, mat4LookYaw([0, 0, 0], yaw, pitch));
   this.pxFactor = (this.canvas.height / 2) / Math.tan(FOV / 2);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   this.points = [];   // accumulated point sprites: x,y,z, r,g,b,a, size
@@ -244,7 +242,7 @@ Renderer.prototype.begin = function (cx, cy, yaw, boomLights) {
   const pos = new Float32Array(12), col = new Float32Array(16);
   (boomLights || []).slice(0, 4).forEach((b, i) => {
     pos[i * 3] = (b.x - cx) * LIGHT_SCALE;
-    pos[i * 3 + 1] = -EYE_HEIGHT * LIGHT_SCALE;
+    pos[i * 3 + 1] = (b.z - cz) * LIGHT_SCALE;
     pos[i * 3 + 2] = (b.y - cy) * LIGHT_SCALE;
     col[i * 4] = 1.0 * b.i; col[i * 4 + 1] = 0.6 * b.i; col[i * 4 + 2] = 0.3 * b.i;
     col[i * 4 + 3] = b.r * LIGHT_SCALE;
@@ -308,65 +306,65 @@ Renderer.prototype.drawMesh = function (buf, count, indexed, model, color, emiss
 };
 
 // planet: shrink with distance, become a dot, fade out, disappear
-Renderer.prototype.drawPlanet = function (px, py, team, dist) {
+Renderer.prototype.drawPlanet = function (px, py, team, dist, pz = 0) {
   if (dist > PLANET_MAX) return 0;
   const alpha = dist < PLANET_FADE ? 1 :
     1 - (dist - PLANET_FADE) / (PLANET_MAX - PLANET_FADE);
   const color = TEAM_COLORS[team] || TEAM_COLORS.I;
   const pxRadius = PLANET_RADIUS / Math.max(dist, 1) * this.pxFactor;
   if (pxRadius < 2) {
-    this.points.push(px, 0, py, color[0], color[1], color[2], alpha,
+    this.points.push(px, pz, py, color[0], color[1], color[2], alpha,
                      Math.max(2.5, pxRadius * 2));
   } else {
     const spin = 0; // planets don't need to spin; sphere is uniform
     this.drawMesh(this.sphereBuf, this.sphereCount, true,
-                  mat4Model(px, 0, py, spin, PLANET_RADIUS),
+                  mat4Model(px, pz, py, spin, PLANET_RADIUS),
                   [color[0], color[1], color[2], alpha], 0, 0.1);
   }
   return alpha;
 };
 
-Renderer.prototype.drawShip = function (px, py, yaw, team, dist, dim) {
+Renderer.prototype.drawShip = function (px, py, yaw, team, dist, dim, pz = 0, pitch = 0) {
   if (dist > SHIP_MAX) return 0;
   let alpha = dist < SHIP_FADE ? 1 : 1 - (dist - SHIP_FADE) / (SHIP_MAX - SHIP_FADE);
   if (dim) alpha *= 0.35;
   const color = TEAM_COLORS[team] || TEAM_COLORS.I;
   const pxSize = SHIP_SCALE / Math.max(dist, 1) * this.pxFactor;
   if (pxSize < 2) {
-    this.points.push(px, 0, py, color[0], color[1], color[2], alpha, 3);
+    this.points.push(px, pz, py, color[0], color[1], color[2], alpha, 3);
   } else {
     this.drawMesh(this.shipBuf, this.shipCount, false,
-                  mat4Model(px, 0, py, yaw, SHIP_SCALE),
+                  mat4Model(px, pz, py, yaw, SHIP_SCALE, pitch),
                   [color[0], color[1], color[2], alpha], 0, 0.6);
   }
   return alpha;
 };
 
-Renderer.prototype.drawTorp = function (px, py, team, dist) {
+Renderer.prototype.drawTorp = function (px, py, team, dist, pz = 0) {
   if (dist > BOOM_MAX) return;
   const alpha = dist < SHIP_MAX ? 1 : 1 - (dist - SHIP_MAX) / (BOOM_MAX - SHIP_MAX);
   const color = TEAM_COLORS[team] || TEAM_COLORS.I;
   const size = Math.min(10, Math.max(2.5, 90 / Math.max(dist, 1) * this.pxFactor));
-  this.points.push(px, 0, py, Math.min(1, color[0] + .3), Math.min(1, color[1] + .3),
+  this.points.push(px, pz, py, Math.min(1, color[0] + .3), Math.min(1, color[1] + .3),
                    Math.min(1, color[2] + .3), alpha, size);
 };
 
-Renderer.prototype.drawExplosion = function (px, py, age, scale) { // age 0..1
-  if (Math.hypot(px - this.eye[0], py - this.eye[2]) > BOOM_MAX) return;
+Renderer.prototype.drawExplosion = function (px, py, age, scale, pz = 0) { // age 0..1
+  if (Math.hypot(px - this.eye[0], py - this.eye[2], pz - this.eye[1]) > BOOM_MAX) return;
   const r = (100 + age * 900) * (scale || 1);
   this.gl.depthMask(false); // translucent shell must not occlude torps/beams
   this.drawMesh(this.sphereBuf, this.sphereCount, true,
-                mat4Model(px, 0, py, 0, r), [1, .6, .15, (1 - age) * .8], 1);
+                mat4Model(px, pz, py, 0, r), [1, .6, .15, (1 - age) * .8], 1);
   this.gl.depthMask(true);
 };
 
-Renderer.prototype.drawPhaser = function (x1, y1, x2, y2, team, alpha) {
-  const d1 = Math.hypot(x1 - this.eye[0], y1 - this.eye[2]);
-  const d2 = Math.hypot(x2 - this.eye[0], y2 - this.eye[2]);
+Renderer.prototype.drawPhaser = function (x1, y1, x2, y2, team, alpha, z1 = 0, z2 = 0) {
+  const d1 = Math.hypot(x1 - this.eye[0], y1 - this.eye[2], z1 - this.eye[1]);
+  const d2 = Math.hypot(x2 - this.eye[0], y2 - this.eye[2], z2 - this.eye[1]);
   if (Math.min(d1, d2) > BOOM_MAX) return; // beams flash like explosions do
   const c = TEAM_COLORS[team] || TEAM_COLORS.I;
-  this.lines.push(x1, EYE_HEIGHT - 60, y1, c[0], c[1], c[2], alpha,
-                  x2, 0, y2, c[0], c[1], c[2], alpha);
+  this.lines.push(x1, z1, y1, c[0], c[1], c[2], alpha,
+                  x2, z2, y2, c[0], c[1], c[2], alpha);
 };
 
 Renderer.prototype.finish = function () {

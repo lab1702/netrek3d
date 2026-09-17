@@ -50,14 +50,14 @@ var upgrader = websocket.Upgrader{
 // checkOrigin: same-origin by default — a random website must not be able to
 // open a socket and play as whoever visits it. Browsers always send Origin on
 // websocket upgrades; requests without one (curl, bots' test clients) pass.
-// NETREKFP_ORIGINS overrides for proxies that rewrite Host: a comma-separated
+// NETREK3D_ORIGINS overrides for proxies that rewrite Host: a comma-separated
 // list of allowed origins, or "*" to disable the check.
 func checkOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true
 	}
-	if allowed := os.Getenv("NETREKFP_ORIGINS"); allowed != "" {
+	if allowed := os.Getenv("NETREK3D_ORIGINS"); allowed != "" {
 		if allowed == "*" {
 			return true
 		}
@@ -76,14 +76,15 @@ func checkOrigin(r *http.Request) bool {
 }
 
 type inMsg struct {
-	T    string  `json:"t"`
-	Name string  `json:"name"`
-	Team string  `json:"team"`
-	Ship string  `json:"ship"`
-	D    float64 `json:"d"`
-	V    int     `json:"v"`
-	To   string  `json:"to"`
-	Text string  `json:"text"`
+	T     string  `json:"t"`
+	Name  string  `json:"name"`
+	Team  string  `json:"team"`
+	Ship  string  `json:"ship"`
+	D     float64 `json:"d"`
+	Pitch float64 `json:"pitch"`
+	V     int     `json:"v"`
+	To    string  `json:"to"`
+	Text  string  `json:"text"`
 }
 
 // printable ASCII only, capped — same rule as player names
@@ -107,6 +108,7 @@ type wirePlanetFull struct {
 	Name string  `json:"name"`
 	X    float64 `json:"x"`
 	Y    float64 `json:"y"`
+	Z    float64 `json:"z"`
 	O    string  `json:"o"`
 	A    int     `json:"a"`
 	F    int     `json:"f"`
@@ -120,22 +122,25 @@ type wirePlanet struct {
 }
 
 type wirePlayer struct {
-	I  int     `json:"i"`
-	Nm string  `json:"nm"`
-	Tm string  `json:"tm"`
-	S  string  `json:"s"`
-	X  int     `json:"x"`
-	Y  int     `json:"y"`
-	D  float64 `json:"d"`
-	Ki float64 `json:"ki"`
-	St string  `json:"st"`
-	Cl bool    `json:"cl"`
+	I     int     `json:"i"`
+	Nm    string  `json:"nm"`
+	Tm    string  `json:"tm"`
+	S     string  `json:"s"`
+	X     int     `json:"x"`
+	Y     int     `json:"y"`
+	Z     int     `json:"z"`
+	D     float64 `json:"d"`
+	Pitch float64 `json:"pitch"`
+	Ki    float64 `json:"ki"`
+	St    string  `json:"st"`
+	Cl    bool    `json:"cl"`
 }
 
 type wireTorp struct {
 	I  int    `json:"i"`
 	X  int    `json:"x"`
 	Y  int    `json:"y"`
+	Z  int    `json:"z"`
 	Tm string `json:"tm"`
 }
 
@@ -143,7 +148,9 @@ type wireYou struct {
 	I     int     `json:"i"`
 	X     float64 `json:"x"`
 	Y     float64 `json:"y"`
+	Z     float64 `json:"z"`
 	D     float64 `json:"d"`
+	Pitch float64 `json:"pitch"`
 	Sp    int     `json:"sp"`
 	MaxSp int     `json:"maxsp"`
 	Sh    int     `json:"sh"`
@@ -243,7 +250,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	s.game.mu.Lock()
 	welcome, _ := json.Marshal(map[string]any{
-		"t": "welcome", "counts": s.game.teamCounts(), "planets": s.game.wirePlanetsFull(),
+		"t": "welcome", "protocol": 2, "dimensions": 3, "counts": s.game.teamCounts(), "planets": s.game.wirePlanetsFull(),
 	})
 	s.game.mu.Unlock()
 	if !c.queueReliable(welcome) {
@@ -298,7 +305,7 @@ func (c *Client) readPump() {
 		}
 		var ok bool
 		m.D, ok = normalizeDirection(m.D)
-		if !ok {
+		if !ok || math.IsNaN(m.Pitch) || math.IsInf(m.Pitch, 0) {
 			continue
 		}
 		if m.T == "chat" {
@@ -349,7 +356,7 @@ func (c *Client) readPump() {
 			if m.V < 0 {
 				m.V = 0
 			}
-			c.srv.game.Command(c.player, m.T, m.D, m.V)
+			c.srv.game.Command(c.player, m.T, m.D, m.V, m.Pitch)
 		}
 	}
 }
@@ -426,7 +433,7 @@ func (c *Client) queueSnapshot(data []byte) {
 func (g *Game) wirePlanetsFull() []wirePlanetFull {
 	out := make([]wirePlanetFull, len(g.planets))
 	for i, pl := range g.planets {
-		out[i] = wirePlanetFull{pl.N, pl.Name, pl.X, pl.Y, teamLetter(pl.Owner), pl.Armies, pl.Flags}
+		out[i] = wirePlanetFull{pl.N, pl.Name, pl.X, pl.Y, pl.Z, teamLetter(pl.Owner), pl.Armies, pl.Flags}
 	}
 	return out
 }
@@ -443,12 +450,12 @@ func (s *Server) broadcast() {
 			continue // dead slots stay listed (player roster); quit slots don't
 		}
 		players = append(players, wirePlayer{p.ID, p.Name, teamLetter(p.Team), p.Ship.Type,
-			int(p.X), int(p.Y), round3(p.Dir), math.Round(p.Kills*100) / 100,
+			int(p.X), int(p.Y), int(p.Z), round3(p.Dir), round3(p.Pitch), math.Round(p.Kills*100) / 100,
 			p.Status, p.Cloaked})
 	}
 	torps := make([]wireTorp, 0, len(g.torps))
 	for _, t := range g.torps {
-		torps = append(torps, wireTorp{t.ID, int(t.X), int(t.Y), teamLetter(t.Team)})
+		torps = append(torps, wireTorp{t.ID, int(t.X), int(t.Y), int(t.Z), teamLetter(t.Team)})
 	}
 	planets := make([]wirePlanet, len(g.planets))
 	for i, pl := range g.planets {
@@ -483,7 +490,7 @@ func (s *Server) broadcast() {
 		}
 		mine := snap
 		mine.You = wireYou{
-			I: p.ID, X: p.X, Y: p.Y, D: round3(p.Dir), Sp: p.Speed, MaxSp: p.Ship.MaxSpeed,
+			I: p.ID, X: p.X, Y: p.Y, Z: p.Z, D: round3(p.Dir), Pitch: round3(p.Pitch), Sp: p.Speed, MaxSp: p.Ship.MaxSpeed,
 			Sh: p.Shield, MaxSh: p.Ship.MaxShield, Dm: p.Damage, MaxDm: p.Ship.MaxDamage,
 			Fu: p.Fuel, MaxFu: p.Ship.MaxFuel, Wt: p.WTemp, MaxWt: p.Ship.MaxWpnTemp,
 			Et: p.ETemp, MaxEt: p.Ship.MaxEgnTemp, Tp: p.NTorps, Ar: p.Armies,

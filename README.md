@@ -1,18 +1,28 @@
-# netrekfp
+# netrek3d
 
-![netrekfp — cockpit view of a T-mode bot battle in Federation space](netrekfp.png)
+A standalone, fully spatial evolution of [netrekfp](https://github.com/lab1702/netrekfp).
+The authoritative Go server simulates a 100000 × 100000 × 100000 galaxy:
+X/Y run from 0 to 100000; Z (altitude) runs from -50000 to +50000.
+The WebGL cockpit follows your ship's yaw and pitch.
 
-**Play it live: <https://www.lab1702.com/fpnetrek/>**
+Ships, planets, torpedoes, phasers, explosions, detection ranges, planet defenses,
+and autopilot all use three-dimensional coordinates. Speed is constant regardless
+of pitch. Ship turning follows a great-circle arc with the existing class turn rates.
+Ships bounce off all six galaxy walls. Orbit entry captures a plane from the approach
+position and heading, so orbits can be inclined or vertical.
 
-Netrek from the cockpit: classic Netrek rules on the classic flat 100000×100000 galaxy, but
-instead of a 2D tactical view you look out of your ship at 3D planets and ships floating in
-space. Planets are huge up close, shrink to a dot as you fly away, and vanish past ~25k units.
-Press `m` for the galactic map.
+The forty classic planets retain their X/Y positions and use the same ten altitude
+layers per empire, with homeworlds at Z=0. Bots navigate between these layers and
+lead moving targets with a three-dimensional projectile intercept calculation.
+Classic ship classes, resources, army play, T-mode, and combat balance constants
+are inherited from the original project.
 
-A radar minimap in the top-right corner shows planets and ships within 20k units, north-up.
+The galactic map remains an X/Y tactical projection, with absolute Z labels. The
+local radar uses spherical range and labels relative altitude. Flight uses yaw and
+pitch with a stable up direction; independent roll and strafing are not implemented.
 
-Planet names/positions, ship stats, and combat formulas are taken verbatim from the Vanilla
-netrek server source (`quozl/netrek-server`).
+This project is developed separately in `lab1702/netrek3d`. The original repository
+is not configured as a push remote. Its MIT license and history are retained.
 
 ## Run
 
@@ -33,15 +43,15 @@ WebSocket relative to the page URL. Caddy example:
 
 ```
 example.com {
-    redir /netrekfp /netrekfp/ 301
-    handle_path /netrekfp/* {
+    redir /netrek3d /netrek3d/ 301
+    handle_path /netrek3d/* {
         reverse_proxy localhost:9701
     }
 }
 ```
 
 WebSocket connections are same-origin only (Caddy preserves the Host header, so the above
-just works). If your proxy rewrites Host, set `NETREKFP_ORIGINS` to a comma-separated list
+just works). If your proxy rewrites Host, set `NETREK3D_ORIGINS` to a comma-separated list
 of allowed origins (e.g. `https://example.com`), or `*` to disable the check.
 
 **Bots:** the join screen has bot controls — `+F/+R/+K/+O` add a bot to a team, `−` removes one,
@@ -70,7 +80,9 @@ team colors and all in-game rendering are historical and deliberately outside th
 
 | Input | Action |
 |---|---|
-| right-click | set course toward pointer |
+| right-click | set yaw and pitch toward pointer |
+| arrow keys | steer pitch up/down and yaw left/right |
+| `h` | level pitch at current altitude |
 | left-click / `t` | fire torpedo toward pointer |
 | middle-click / `f` | fire phaser toward pointer |
 | `p` | player list: 4 team columns, sorted by kills |
@@ -84,9 +96,32 @@ team colors and all in-game rendering are historical and deliberately outside th
 | `c` | cloak |
 | `d` | det enemy torps |
 | `R` | repair mode |
-| `m` | galactic map |
+| `m` | galactic X/Y map with Z labels; right-click sets a level course |
 | `\` | bot management panel |
 | `Q` | self destruct (10 s fuse; any other action cancels) |
 | Esc | quit ship (or close bot panel) |
 
 You need kills to carry armies (2 per kill, 3 per kill in an Assault ship).
+
+## Development and verification
+
+Requires Go 1.26.5 or newer. No JavaScript build or external browser libraries.
+
+```sh
+go test -race ./...
+node --test tests/client.test.cjs
+go run . -addr :9701
+```
+
+The spatial regression tests cover pitch-independent speed, Z wall reflections,
+vertical weapon hits, altitude isolation of area effects, inclined orbit stability,
+autopilot convergence, 3D bot intercepts, and wire serialization. Existing Netrek
+rule and WebSocket regression tests remain in place.
+
+Protocol version 2 adds `z` to positions and `pitch` (radians, -π/2 through +π/2)
+to ship state and course/weapon commands. Phaser effects carry `fz` and `tz`;
+explosions carry `z`. The welcome message advertises `protocol: 2, dimensions: 3`.
+Use this repository's client with its server; the old flat client is not supported.
+
+Design notes under `docs/superpowers/` describe the original flat-world project
+and are retained as historical reference.

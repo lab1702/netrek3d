@@ -34,15 +34,16 @@ const (
 )
 
 type Torp struct {
-	ID     int
-	Owner  int // firing slot, retained for wire/debug metadata
-	Team   int
-	X, Y   float64
-	Dir    float64
-	Speed  int // warp
-	Fuse   int // ticks
-	Damage int
-	Detter int // detter slot, retained for wire/debug metadata; -1 when unset
+	ID      int
+	Owner   int // firing slot, retained for wire/debug metadata
+	Team    int
+	X, Y, Z float64
+	Dir     float64
+	Pitch   float64
+	Speed   int // warp
+	Fuse    int // ticks
+	Damage  int
+	Detter  int // detter slot, retained for wire/debug metadata; -1 when unset
 
 	// Slots are reusable, so delayed projectile bookkeeping and attribution must
 	// use player identity rather than looking up whoever currently occupies an ID.
@@ -53,14 +54,17 @@ type Torp struct {
 type PhaserFx struct {
 	FX float64 `json:"fx"`
 	FY float64 `json:"fy"`
+	FZ float64 `json:"fz"`
 	TX float64 `json:"tx"`
 	TY float64 `json:"ty"`
+	TZ float64 `json:"tz"`
 	Tm string  `json:"tm"`
 }
 
 type Boom struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
+	Z float64 `json:"z"`
 	S float64 `json:"s"` // visual scale: 0.35 torp, ships blowup-base/100
 }
 
@@ -84,13 +88,15 @@ type Player struct {
 	Ship   *ShipStats
 	Status string // "outfit", "alive", "explode", "dead"
 
-	X, Y     float64
-	Dir      float64 // radians; velocity = (cos, sin)
-	DesDir   float64
-	SubDir   int
-	Speed    int
-	DesSpeed int
-	SubSpeed int
+	X, Y, Z         float64
+	Dir             float64 // radians; velocity = (cos, sin)
+	DesDir          float64
+	Pitch, DesPitch float64
+	OrbitNormal     vec3
+	SubDir          int
+	Speed           int
+	DesSpeed        int
+	SubSpeed        int
 
 	Shield               int
 	Damage               int
@@ -255,6 +261,9 @@ func (g *Game) spawn(p *Player) {
 	at := g.planets[p.Team*10]
 	p.X = at.X + float64(rand.Intn(10000)-5000)
 	p.Y = at.Y + float64(rand.Intn(10000)-5000)
+	p.Z = at.Z
+	p.Pitch = math.Atan2(-p.Z, math.Hypot(GWidth/2-p.X, GWidth/2-p.Y))
+	p.DesPitch = p.Pitch
 	p.X = math.Max(0, math.Min(GWidth, p.X))
 	p.Y = math.Max(0, math.Min(GWidth, p.Y))
 	center := math.Atan2(GWidth/2-p.Y, GWidth/2-p.X)
@@ -312,7 +321,7 @@ func (g *Game) Leave(cl *Client) {
 
 // ---------- commands (called with lock held via Command) ----------
 
-func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
+func (g *Game) Command(p *Player, cmd string, dir float64, val int, pitches ...float64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if p.Status != "alive" {
@@ -327,8 +336,13 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 		p.SelfDest = 0
 		g.say("%s: self destruct has been canceled", p.Name)
 	}
+	pitch := p.Pitch
+	if len(pitches) > 0 {
+		pitch = clampPitch(pitches[0])
+	}
 	switch cmd {
 	case "course":
+		p.DesPitch = pitch
 		p.DesDir = dir
 		p.RepairMode = false
 		p.LockPlanet = -1 // manual course overrides the lock
@@ -356,9 +370,9 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 		}
 		p.RepairMode = false
 	case "torp":
-		g.fireTorp(p, dir)
+		g.fireTorp(p, dir, pitch)
 	case "phaser":
-		g.firePhaser(p, dir)
+		g.firePhaser(p, dir, pitch)
 	case "orbit":
 		g.enterOrbit(p)
 	case "bomb":
@@ -421,7 +435,11 @@ func (g *Game) breakOrbit(p *Player) {
 	}
 }
 
-func (g *Game) fireTorp(p *Player, dir float64) {
+func (g *Game) fireTorp(p *Player, dir float64, pitches ...float64) {
+	pitch := p.Pitch
+	if len(pitches) > 0 {
+		pitch = clampPitch(pitches[0])
+	}
 	s := p.Ship
 	if p.WLock || p.Cloaked || p.RepairMode || p.NTorps >= MaxTorps ||
 		p.Fuel < s.TorpCost || p.LastTorpTick == g.tick {
@@ -433,13 +451,17 @@ func (g *Game) fireTorp(p *Player, dir float64) {
 	p.WTemp += s.TorpCost/10 - 10
 	g.torpSeq++
 	g.torps[g.torpSeq] = &Torp{
-		ID: g.torpSeq, Owner: p.ID, Team: p.Team, X: p.X, Y: p.Y, Dir: dir,
+		ID: g.torpSeq, Owner: p.ID, Team: p.Team, X: p.X, Y: p.Y, Z: p.Z, Dir: dir, Pitch: pitch,
 		Speed: s.TorpSpeed, Fuse: s.TorpFuse + rand.Intn(20), Damage: s.TorpDamage,
 		Detter: -1, owner: p,
 	}
 }
 
-func (g *Game) firePhaser(p *Player, dir float64) {
+func (g *Game) firePhaser(p *Player, dir float64, pitches ...float64) {
+	pitch := p.Pitch
+	if len(pitches) > 0 {
+		pitch = clampPitch(pitches[0])
+	}
 	s := p.Ship
 	if p.WLock || p.Cloaked || p.RepairMode || p.PhaserBusy > 0 || p.Fuel < s.PhaserCost {
 		return
@@ -449,20 +471,21 @@ func (g *Game) firePhaser(p *Player, dir float64) {
 	p.PhaserBusy = s.PhaserFuse
 
 	rangeMax := float64(PhaseDist * s.PhaserDamage / 100)
-	dx, dy := math.Cos(dir), math.Sin(dir)
+	v := heading(dir, pitch)
+	dx, dy, dz := v.X, v.Y, v.Z
 	var hit *Player
 	best := rangeMax + 1
 	for _, t := range g.players {
 		if t == nil || t == p || t.Status != "alive" || t.Team == p.Team {
 			continue
 		}
-		ax, ay := t.X-p.X, t.Y-p.Y
-		along := ax*dx + ay*dy // distance along the beam, clamped >= 0
+		ax, ay, az := t.X-p.X, t.Y-p.Y, t.Z-p.Z
+		along := ax*dx + ay*dy + az*dz // distance along the beam, clamped >= 0
 		if along < 0 {
 			along = 0
 		}
-		perp := math.Hypot(ax-along*dx, ay-along*dy)
-		dist := math.Hypot(ax, ay)
+		perp := length3(ax-along*dx, ay-along*dy, az-along*dz)
+		dist := length3(ax, ay, az)
 		if perp <= ZapPlayer && dist <= rangeMax && dist < best {
 			best, hit = dist, t
 		}
@@ -470,10 +493,10 @@ func (g *Game) firePhaser(p *Player, dir float64) {
 	if hit != nil {
 		dmg := int(float64(s.PhaserDamage) * (1.0 - best/rangeMax))
 		g.hurt(hit, dmg, p, p.Team, "phaser")
-		g.phasers = append(g.phasers, PhaserFx{p.X, p.Y, hit.X, hit.Y, teamLetter(p.Team)})
+		g.phasers = append(g.phasers, PhaserFx{p.X, p.Y, p.Z, hit.X, hit.Y, hit.Z, teamLetter(p.Team)})
 	} else {
 		g.phasers = append(g.phasers,
-			PhaserFx{p.X, p.Y, p.X + dx*rangeMax, p.Y + dy*rangeMax, teamLetter(p.Team)})
+			PhaserFx{p.X, p.Y, p.Z, p.X + dx*rangeMax, p.Y + dy*rangeMax, p.Z + dz*rangeMax, teamLetter(p.Team)})
 	}
 }
 
@@ -485,7 +508,7 @@ func (g *Game) detEnemyTorps(p *Player) {
 	p.Fuel -= s.DetCost
 	p.WTemp += s.DetCost / 5
 	for _, t := range g.torps {
-		if t.Team != p.Team && math.Hypot(t.X-p.X, t.Y-p.Y) <= DetDist {
+		if t.Team != p.Team && length3(t.X-p.X, t.Y-p.Y, t.Z-p.Z) <= DetDist {
 			t.Detter = p.ID
 			t.detter = p
 			g.explodeTorp(t)
@@ -499,11 +522,20 @@ func (g *Game) enterOrbit(p *Player) {
 		return
 	}
 	for _, pl := range g.planets {
-		if math.Hypot(pl.X-p.X, pl.Y-p.Y) <= EntOrbDist {
-			ang := math.Atan2(p.Y-pl.Y, p.X-pl.X)
-			p.X = pl.X + OrbDist*math.Cos(ang)
-			p.Y = pl.Y + OrbDist*math.Sin(ang)
-			p.Dir, p.DesDir = ang+math.Pi/2, ang+math.Pi/2
+		if length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z) <= EntOrbDist {
+			r := vec3{p.X - pl.X, p.Y - pl.Y, p.Z - pl.Z}.unit()
+			if r.norm() == 0 {
+				r = vec3{X: 1}
+			}
+			n := r.cross(heading(p.Dir, p.Pitch)).unit()
+			if n.norm() < 0.5 {
+				n = r.cross(vec3{Z: 1}).unit()
+			}
+			if n.norm() < 0.5 {
+				n = r.cross(vec3{Y: 1}).unit()
+			}
+			p.OrbitNormal = n
+			g.placeOrbit(p, pl, r)
 			p.Speed, p.DesSpeed = 0, 0
 			p.Orbiting = pl.N
 			p.LockPlanet = -1 // orbit.c:28
@@ -666,10 +698,11 @@ func (g *Game) movePlayer(p *Player) {
 	// converge, otherwise maximum warp, then brakes into orbit.
 	if p.LockPlanet >= 0 && p.Orbiting < 0 {
 		pl := g.planets[p.LockPlanet]
-		dist := math.Hypot(pl.X-p.X, pl.Y-p.Y)
+		dist := length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z)
 		want := math.Atan2(pl.Y-p.Y, pl.X-p.X)
+		p.DesPitch = elevation(p.X, p.Y, p.Z, pl.X, pl.Y, pl.Z)
 		p.DesSpeed = s.MaxSpeed
-		if math.Abs(math.Remainder(p.Dir-want, 2*math.Pi)) > 0.3 {
+		if heading(p.Dir, p.Pitch).dot(heading(want, p.DesPitch)) < math.Cos(0.3) {
 			p.DesSpeed = maneuverSpeed(s, dist)
 		}
 		if dist-OrbDist/2 < 11500*float64(p.Speed*p.Speed)/float64(s.DecInt) &&
@@ -727,41 +760,35 @@ func (g *Game) movePlayer(p *Player) {
 	if p.Orbiting >= 0 {
 		// orbital motion: +2 direction units per update at radius 800 (daemon.c:1132)
 		pl := g.planets[p.Orbiting]
-		ang := math.Atan2(p.Y-pl.Y, p.X-pl.X) + 2*ByteRad
-		p.X = pl.X + OrbDist*math.Cos(ang)
-		p.Y = pl.Y + OrbDist*math.Sin(ang)
-		p.Dir, p.DesDir = ang+math.Pi/2, ang+math.Pi/2
+		r := vec3{p.X - pl.X, p.Y - pl.Y, p.Z - pl.Z}.unit()
+		if p.OrbitNormal.norm() == 0 {
+			p.OrbitNormal = vec3{Z: 1}
+		}
+		tangent := p.OrbitNormal.cross(r)
+		r = r.scale(math.Cos(2 * ByteRad)).add(tangent.scale(math.Sin(2 * ByteRad)))
+		g.placeOrbit(p, pl, r)
 		return
 	}
 
-	// turning (changedir, daemon.c:1847; newturn=0 variant)
-	if p.Dir != p.DesDir {
-		if p.Speed == 0 {
-			p.Dir, p.SubDir = p.DesDir, 0
-		} else {
-			shift := p.Speed
-			if shift > 30 {
-				shift = 30
-			}
-			p.SubDir += s.Turns / (1 << shift)
-			ticks := p.SubDir / 1000
-			if ticks > 0 {
-				p.SubDir %= 1000
-				diff := math.Remainder(p.DesDir-p.Dir, 2*math.Pi)
-				step := float64(ticks) * ByteRad
-				if math.Abs(diff) <= step {
-					p.Dir = p.DesDir
-				} else if diff > 0 {
-					p.Dir += step
-				} else {
-					p.Dir -= step
-				}
-			}
+	// Rotate along the shortest great-circle arc at the ship's turn rate.
+	if p.Speed == 0 {
+		p.Dir, p.Pitch, p.SubDir = p.DesDir, p.DesPitch, 0
+	} else {
+		p.SubDir += s.Turns / (1 << min(p.Speed, 30))
+		ticks := p.SubDir / 1000
+		p.SubDir %= 1000
+		if ticks > 0 {
+			turnToward(p, float64(ticks)*ByteRad)
 		}
 	}
-
-	p.X += float64(p.Speed*Warp1) * math.Cos(p.Dir)
-	p.Y += float64(p.Speed*Warp1) * math.Sin(p.Dir)
+	v := heading(p.Dir, p.Pitch).scale(float64(p.Speed * Warp1))
+	p.X += v.X
+	p.Y += v.Y
+	p.Z += v.Z
+	if p.Z < -GWidth/2 || p.Z > GWidth/2 {
+		p.Z = math.Copysign(GWidth-math.Abs(p.Z), p.Z)
+		p.Pitch, p.DesPitch = -p.Pitch, -p.DesPitch
+	}
 
 	// galaxy edge: bounce (daemon.c:1253)
 	if p.X < 0 || p.X > GWidth {
@@ -889,14 +916,16 @@ func (g *Game) housekeepPlayer(p *Player) {
 func (g *Game) moveTorps() {
 	for _, t := range g.torps {
 		t.Dir += float64(rand.Intn(3)-1) * ByteRad // TWOBBLE
-		t.X += float64(t.Speed*Warp1) * math.Cos(t.Dir)
-		t.Y += float64(t.Speed*Warp1) * math.Sin(t.Dir)
+		v := heading(t.Dir, t.Pitch).scale(float64(t.Speed * Warp1))
+		t.X += v.X
+		t.Y += v.Y
+		t.Z += v.Z
 		t.Fuse--
 		if t.Fuse <= 0 { // expired torps fizzle harmlessly (daemon.c udtorps)
 			g.freeTorp(t)
 			continue
 		}
-		if t.X < 0 || t.X > GWidth || t.Y < 0 || t.Y > GWidth {
+		if t.X < 0 || t.X > GWidth || t.Y < 0 || t.Y > GWidth || math.Abs(t.Z) > GWidth/2 {
 			t.Detter = t.Owner // wall hits are TDET at the owner: team-safe
 			t.detter = t.owner
 			g.explodeTorp(t)
@@ -906,7 +935,7 @@ func (g *Game) moveTorps() {
 			if p == nil || p.Status != "alive" || p.Team == t.Team {
 				continue
 			}
-			if math.Hypot(p.X-t.X, p.Y-t.Y) <= ExpDist {
+			if length3(p.X-t.X, p.Y-t.Y, p.Z-t.Z) <= ExpDist {
 				g.explodeTorp(t)
 				break
 			}
@@ -923,7 +952,7 @@ func (g *Game) freeTorp(t *Torp) {
 
 func (g *Game) explodeTorp(t *Torp) {
 	g.freeTorp(t)
-	g.booms = append(g.booms, Boom{t.X, t.Y, 0.35})
+	g.booms = append(g.booms, Boom{t.X, t.Y, t.Z, 0.35})
 	detterTeam := TeamNone
 	if t.detter != nil {
 		detterTeam = t.detter.Team
@@ -939,7 +968,7 @@ func (g *Game) explodeTorp(t *Torp) {
 		if t.detter != nil && p != t.detter && p.Team == detterTeam {
 			continue // TDETTEAMSAFE — but the detter himself eats the blast
 		}
-		dist := math.Hypot(p.X-t.X, p.Y-t.Y)
+		dist := length3(p.X-t.X, p.Y-t.Y, p.Z-t.Z)
 		if dist > DamDist {
 			continue
 		}
@@ -966,7 +995,7 @@ func (g *Game) checkSelfDestruct(p *Player) {
 	if green {
 		for _, e := range g.players {
 			if e != nil && e.Status == "alive" && e.Team != p.Team &&
-				math.Hypot(e.X-p.X, e.Y-p.Y) < 15000 {
+				length3(e.X-p.X, e.Y-p.Y, e.Z-p.Z) < 15000 {
 				green = false
 				break
 			}
@@ -989,7 +1018,7 @@ func (g *Game) blowup(v *Player) {
 		base = 200
 	}
 	// fireball scales with the same per-class blast strength as the damage
-	g.booms = append(g.booms, Boom{v.X, v.Y, float64(base) / 100})
+	g.booms = append(g.booms, Boom{v.X, v.Y, v.Z, float64(base) / 100})
 	for _, p := range g.players {
 		if p == nil || p == v || p.Status != "alive" {
 			continue
@@ -997,7 +1026,7 @@ func (g *Game) blowup(v *Player) {
 		if v.SelfKill && p.Team == v.ExplodeTeam {
 			continue // KQUIT explosions spare teammates (daemon.c:3566)
 		}
-		dist := math.Hypot(p.X-v.X, p.Y-v.Y)
+		dist := length3(p.X-v.X, p.Y-v.Y, p.Z-v.Z)
 		if dist > ShipDamAge {
 			continue
 		}
@@ -1030,7 +1059,7 @@ func (g *Game) planetFight() {
 			if p == nil || p.Status != "alive" || p.Team == pl.Owner {
 				continue
 			}
-			if math.Hypot(p.X-pl.X, p.Y-pl.Y) <= PFireDist {
+			if length3(p.X-pl.X, p.Y-pl.Y, p.Z-pl.Z) <= PFireDist {
 				g.hurt(p, pl.Armies/10+2, nil, TeamNone, "planet fire from "+pl.Name)
 			}
 		}

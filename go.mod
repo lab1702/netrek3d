@@ -1,4 +1,4 @@
-module netrekfp
+module netrek3d
 
 go 1.26.5
 

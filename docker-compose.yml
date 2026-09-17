@@ -1,7 +1,7 @@
 services:
-  netrekfp:
+  netrek3d:
     build: .
-    container_name: netrekfp
+    container_name: netrek3d
     ports:
       - "9701:9701"
     restart: unless-stopped

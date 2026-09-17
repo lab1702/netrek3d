@@ -110,7 +110,7 @@ func (g *Game) updateBot(p *Player) {
 	enemy := g.botNearestEnemy(p)
 	enemyDist := maxSearch
 	if enemy != nil {
-		enemyDist = dist2d(p.X, p.Y, enemy.X, enemy.Y)
+		enemyDist = length3(enemy.X-p.X, enemy.Y-p.Y, enemy.Z-p.Z)
 	}
 
 	// stay orbiting a friendly planet while healing and safe
@@ -143,10 +143,11 @@ func (g *Game) updateBot(p *Player) {
 		ap := g.planets[b.PlanetApproach]
 		count, minDist, _, _, _ := g.planetDefenders(ap, p.Team)
 		if count == 0 || minDist > 10000 {
-			d := dist2d(p.X, p.Y, ap.X, ap.Y)
+			d := length3(ap.X-p.X, ap.Y-p.Y, ap.Z-p.Z)
 			if d < EntOrbDist {
 				b.PlanetApproach = -1
 			} else {
+				p.DesPitch = elevation(p.X, p.Y, p.Z, ap.X, ap.Y, ap.Z)
 				g.botNavigate(p, math.Atan2(ap.Y-p.Y, ap.X-p.X), g.botApproachSpeed(p, d), th)
 				b.Cooldown = 5
 				return
@@ -257,7 +258,7 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 
 	// clear defenders before committing to the planet
 	count, minDist, score, closest, carrier := g.planetDefenders(target, p.Team)
-	if count > 0 && dist2d(p.X, p.Y, target.X, target.Y) > EntOrbDist {
+	if count > 0 && length3(target.X-p.X, target.Y-p.Y, target.Z-p.Z) > EntOrbDist {
 		if score > 2500 || minDist < 6000 {
 			if count >= 3 && g.botAlliesNear(p, 15000) == 0 {
 				b.PlanetApproach = -1
@@ -271,7 +272,7 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 			if primary != nil {
 				b.PlanetApproach = target.N
 				g.breakOrbit(p)
-				g.botEngage(p, primary, dist2d(p.X, p.Y, primary.X, primary.Y), th)
+				g.botEngage(p, primary, length3(primary.X-p.X, primary.Y-p.Y, primary.Z-p.Z), th)
 				return
 			}
 		}
@@ -313,7 +314,7 @@ func (g *Game) botFreePlay(p *Player, enemy *Player, enemyDist float64, th comba
 	switch p.Bot.Role {
 	case botRoleHunter:
 		if t := g.botBestTarget(p); t != nil {
-			d := dist2d(p.X, p.Y, t.X, t.Y)
+			d := length3(t.X-p.X, t.Y-p.Y, t.Z-p.Z)
 			if critical && d < 6000 {
 				g.botSafeArea(p)
 				return
@@ -323,8 +324,9 @@ func (g *Game) botFreePlay(p *Player, enemy *Player, enemyDist float64, th comba
 		}
 	case botRoleDefender:
 		if pl := g.botPlanetToDefend(p); pl != nil {
-			d := dist2d(p.X, p.Y, pl.X, pl.Y)
+			d := length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z)
 			if d > 5000 {
+				p.DesPitch = elevation(p.X, p.Y, p.Z, pl.X, pl.Y, pl.Z)
 				g.botNavigate(p, math.Atan2(pl.Y-p.Y, pl.X-p.X), p.Ship.MaxSpeed, th)
 			} else {
 				g.botNavigate(p, rand.Float64()*2*math.Pi, p.Ship.MaxSpeed*7/10, th)
@@ -401,6 +403,7 @@ func (g *Game) botEngage(p, target *Player, dist float64, th combatThreat) {
 		}
 	}
 
+	p.DesPitch = elevation(p.X, p.Y, p.Z, target.X, target.Y, target.Z)
 	interceptDir := g.botInterceptCourse(p, target)
 	if th.evade {
 		p.DesDir = g.botDodgeDir(p, interceptDir, th)
@@ -466,7 +469,7 @@ func (g *Game) botEngage(p, target *Player, dist float64, th combatThreat) {
 			dmg := float64(p.Ship.PhaserDamage) * (1 - dist/rangeMax)
 			wouldKill := target.Damage+int(dmg) >= target.Ship.MaxDamage
 			if wouldKill || targetDmg > 0.5 || dist < 1500 {
-				g.firePhaser(p, math.Atan2(target.Y-p.Y, target.X-p.X))
+				g.firePhaser(p, math.Atan2(target.Y-p.Y, target.X-p.X), elevation(p.X, p.Y, p.Z, target.X, target.Y, target.Z))
 				b.Cooldown = 5
 			}
 		}
@@ -508,6 +511,7 @@ func (g *Game) botManeuver(p, target *Player, dist float64, interceptDir float64
 
 func (g *Game) botDefendCarrying(p, enemy *Player, dist float64) {
 	if dist < 3000 {
+		p.DesPitch = -elevation(p.X, p.Y, p.Z, enemy.X, enemy.Y, enemy.Z)
 		p.DesDir = math.Atan2(p.Y-enemy.Y, p.X-enemy.X)
 		p.DesSpeed = p.Ship.MaxSpeed
 		if p.NTorps < MaxTorps && p.Fuel > 2000 {
@@ -527,77 +531,75 @@ func (g *Game) botShouldCloak(p *Player, dist float64) bool {
 // botInterceptCourse: navigation lead toward a moving target (netrek-web
 // bot_types.go:15, with its unit-scaling bug corrected — see agent notes)
 func (g *Game) botInterceptCourse(p, t *Player) float64 {
-	d := dist2d(p.X, p.Y, t.X, t.Y)
+	d := length3(t.X-p.X, t.Y-p.Y, t.Z-p.Z)
 	if d > 20000 || t.Cloaked || t.Speed < 1 {
 		return math.Atan2(t.Y-p.Y, t.X-p.X)
 	}
 	mySpeed := float64(max(p.Speed, 2) * Warp1)
 	ticks := math.Min(d/mySpeed, 15)
-	vx, vy := targetVelocity(t)
-	return math.Atan2(t.Y+vy*ticks-p.Y, t.X+vx*ticks-p.X)
+	v := targetVelocity3D(t)
+	p.DesPitch = elevation(p.X, p.Y, p.Z, t.X+v.X*ticks, t.Y+v.Y*ticks, t.Z+v.Z*ticks)
+	return math.Atan2(t.Y+v.Y*ticks-p.Y, t.X+v.X*ticks-p.X)
 }
 
 // ---------- weapons ----------
 
-// botAim solves the torpedo intercept quadratic (netrek-web intercept.go:37)
-func botAim(px, py float64, t *Player, projSpeed float64) (float64, float64, bool) {
-	relX, relY := t.X-px, t.Y-py
-	dist := math.Hypot(relX, relY)
-	if dist < 1e-6 {
-		return 0, 0, false
+func targetVelocity3D(t *Player) vec3 {
+	speed := float64(t.Speed * Warp1)
+	if t.Orbiting >= 0 {
+		speed = 2 * ByteRad * OrbDist
 	}
-	vx, vy := targetVelocity(t)
-	a := vx*vx + vy*vy - projSpeed*projSpeed
-	b := 2 * (relX*vx + relY*vy)
-	c := dist * dist
-	var tt float64
+	return heading(t.Dir, t.Pitch).scale(speed)
+}
+
+// Constant-velocity intercept in all three spatial dimensions.
+func botAim3D(p, t *Player, speed float64) (yaw, pitch, ticks float64, ok bool) {
+	r := vec3{t.X - p.X, t.Y - p.Y, t.Z - p.Z}
+	v := targetVelocity3D(t)
+	yaw, pitch = math.Atan2(r.Y, r.X), math.Atan2(r.Z, math.Hypot(r.X, r.Y))
+	a, b, c := v.dot(v)-speed*speed, 2*r.dot(v), r.dot(r)
+	if c < 1e-12 || speed <= 0 {
+		return
+	}
 	if math.Abs(a) < 1e-9 {
 		if math.Abs(b) < 1e-9 {
-			return math.Atan2(relY, relX), dist / projSpeed, true
+			return
 		}
-		tt = -c / b
+		ticks = -c / b
 	} else {
 		disc := b*b - 4*a*c
 		if disc < 0 {
-			return math.Atan2(relY, relX), 0, false
+			return
 		}
-		r := math.Sqrt(disc)
-		t1, t2 := (-b-r)/(2*a), (-b+r)/(2*a)
-		tt = t1
-		if tt <= 0 || (t2 > 0 && t2 < tt) {
-			tt = t2
+		root := math.Sqrt(disc)
+		t1, t2 := (-b-root)/(2*a), (-b+root)/(2*a)
+		ticks = t1
+		if ticks <= 0 || (t2 > 0 && t2 < ticks) {
+			ticks = t2
 		}
 	}
-	if tt <= 0 {
-		return math.Atan2(relY, relX), 0, false
+	if ticks <= 0 {
+		return yaw, pitch, 0, false
 	}
-	return math.Atan2(relY+vy*tt, relX+vx*tt), tt, true
-}
-
-func targetVelocity(t *Player) (float64, float64) {
-	if t.Orbiting >= 0 {
-		// orbital tangential velocity: 2 direction-units per tick at radius 800
-		w := 2 * ByteRad
-		return w * OrbDist * math.Cos(t.Dir), w * OrbDist * math.Sin(t.Dir)
-	}
-	v := float64(t.Speed * Warp1)
-	return v * math.Cos(t.Dir), v * math.Sin(t.Dir)
+	aim := r.add(v.scale(ticks))
+	return math.Atan2(aim.Y, aim.X), math.Atan2(aim.Z, math.Hypot(aim.X, aim.Y)), ticks, true
 }
 
 func (g *Game) botFireTorp(p, target *Player) {
-	dir, _, _ := botAim(p.X, p.Y, target, float64(p.Ship.TorpSpeed*Warp1))
+	dir, pitch, _, _ := botAim3D(p, target, float64(p.Ship.TorpSpeed*Warp1))
 	jitter := (rand.Float64()*2 - 1) * 5 * math.Pi / 180
-	g.fireTorp(p, dir+jitter)
+	g.fireTorp(p, dir+jitter, pitch)
 }
 
 func (g *Game) botStartVolley(p, target *Player, n int) {
-	dir, _, ok := botAim(p.X, p.Y, target, float64(p.Ship.TorpSpeed*Warp1))
+	dir, pitch, _, ok := botAim3D(p, target, float64(p.Ship.TorpSpeed*Warp1))
 	if !ok {
 		dir = math.Atan2(target.Y-p.Y, target.X-p.X)
 	}
 	p.Bot.VolleyLeft = n
 	p.Bot.VolleyIdx = 0
 	p.Bot.VolleyDir = dir
+	p.Bot.VolleyPitch = pitch
 	g.botVolleyShot(p)
 }
 
@@ -610,7 +612,7 @@ func (g *Game) botVolleyShot(p *Player) {
 	count := b.VolleyIdx + b.VolleyLeft // total spread size stays constant
 	offset := float64(b.VolleyIdx-count/2) * math.Pi / 16
 	jitter := (rand.Float64()*2 - 1) * 5 * math.Pi / 180
-	g.fireTorp(p, b.VolleyDir+offset+jitter)
+	g.fireTorp(p, b.VolleyDir+offset+jitter, b.VolleyPitch)
 	b.VolleyIdx++
 	b.VolleyLeft--
 }
@@ -633,9 +635,9 @@ func (g *Game) botTorpRange(p, target *Player) float64 {
 }
 
 func (g *Game) botCanTorpReach(p, target *Player) bool {
-	_, tt, ok := botAim(p.X, p.Y, target, float64(p.Ship.TorpSpeed*Warp1))
+	_, _, tt, ok := botAim3D(p, target, float64(p.Ship.TorpSpeed*Warp1))
 	if !ok {
-		return dist2d(p.X, p.Y, target.X, target.Y) <
+		return length3(target.X-p.X, target.Y-p.Y, target.Z-p.Z) <
 			float64(p.Ship.TorpSpeed*Warp1*p.Ship.TorpFuse)*0.3
 	}
 	safety := 0.85
@@ -650,7 +652,7 @@ func (g *Game) botThreats(p *Player) combatThreat {
 		if t.Team == p.Team {
 			continue
 		}
-		d := dist2d(p.X, p.Y, t.X, t.Y)
+		d := length3(t.X-p.X, t.Y-p.Y, t.Z-p.Z)
 		if d < th.closestTorp {
 			th.closestTorp = d
 		}
@@ -679,7 +681,7 @@ func (g *Game) botThreats(p *Player) combatThreat {
 		if e == nil || e.Status != "alive" || e.Team == p.Team || e.Cloaked {
 			continue
 		}
-		d := dist2d(p.X, p.Y, e.X, e.Y)
+		d := length3(e.X-p.X, e.Y-p.Y, e.Z-p.Z)
 		if d < th.closestEnemy {
 			th.closestEnemy = d
 		}
@@ -712,16 +714,18 @@ func (g *Game) botThreats(p *Player) combatThreat {
 }
 
 func (g *Game) botTorpThreatening(p *Player, t *Torp) bool {
-	d := dist2d(p.X, p.Y, t.X, t.Y)
+	d := length3(t.X-p.X, t.Y-p.Y, t.Z-p.Z)
 	if d > 5000 {
 		return false
 	}
 	tv := float64(t.Speed * Warp1)
-	tvx, tvy := tv*math.Cos(t.Dir), tv*math.Sin(t.Dir)
+	tv3 := heading(t.Dir, t.Pitch).scale(tv)
+	tvx, tvy, tvz := tv3.X, tv3.Y, tv3.Z
 	pv := float64(p.Speed * Warp1)
-	pvx, pvy := pv*math.Cos(p.Dir), pv*math.Sin(p.Dir)
+	pv3 := heading(p.Dir, p.Pitch).scale(pv)
+	pvx, pvy, pvz := pv3.X, pv3.Y, pv3.Z
 	for step := 0.0; step < 5; step += 0.2 {
-		if math.Hypot((p.X+pvx*step)-(t.X+tvx*step), (p.Y+pvy*step)-(t.Y+tvy*step)) < 800 {
+		if length3((p.X+pvx*step)-(t.X+tvx*step), (p.Y+pvy*step)-(t.Y+tvy*step), (p.Z+pvz*step)-(t.Z+tvz*step)) < 800 {
 			return true
 		}
 	}
@@ -791,13 +795,14 @@ func (g *Game) botDodgeDir(p *Player, want float64, th combatThreat) float64 {
 			score := -g.botTorpDanger(p, dir)*10 -
 				math.Abs(math.Remainder(dir-want, 2*math.Pi))*100
 			// clearance from walls and planet defense zones
-			probeX := p.X + 5000*math.Cos(dir)
-			probeY := p.Y + 5000*math.Sin(dir)
+			probe := heading(dir, p.DesPitch).scale(5000)
+			probeX, probeY, probeZ := p.X+probe.X, p.Y+probe.Y, p.Z+probe.Z
 			clr := math.Min(math.Min(probeX, GWidth-probeX), math.Min(probeY, GWidth-probeY))
+			clr = math.Min(clr, GWidth/2-math.Abs(probeZ))
 			for _, pl := range g.planets {
 				if pl.Owner != p.Team && pl.Owner != TeamNone &&
-					dist2d(probeX, probeY, pl.X, pl.Y) < 2000 {
-					clr -= 2000 - dist2d(probeX, probeY, pl.X, pl.Y)
+					length3(pl.X-probeX, pl.Y-probeY, pl.Z-probeZ) < 2000 {
+					clr -= 2000 - length3(pl.X-probeX, pl.Y-probeY, pl.Z-probeZ)
 				}
 			}
 			if clr < 3000 {
@@ -814,15 +819,17 @@ func (g *Game) botDodgeDir(p *Player, want float64, th combatThreat) float64 {
 func (g *Game) botTorpDanger(p *Player, dir float64) float64 {
 	danger := 0.0
 	v := float64(max(p.Speed, 2) * Warp1)
-	vx, vy := v*math.Cos(dir), v*math.Sin(dir)
+	v3 := heading(dir, p.DesPitch).scale(v)
+	vx, vy, vz := v3.X, v3.Y, v3.Z
 	for _, t := range g.torps {
-		if t.Team == p.Team || dist2d(p.X, p.Y, t.X, t.Y) > 6000 {
+		if t.Team == p.Team || length3(t.X-p.X, t.Y-p.Y, t.Z-p.Z) > 6000 {
 			continue
 		}
 		tv := float64(t.Speed * Warp1)
-		tvx, tvy := tv*math.Cos(t.Dir), tv*math.Sin(t.Dir)
+		tv3 := heading(t.Dir, t.Pitch).scale(tv)
+		tvx, tvy, tvz := tv3.X, tv3.Y, tv3.Z
 		for step := 0.0; step <= 3; step += 0.5 {
-			sep := math.Hypot((p.X+vx*step)-(t.X+tvx*step), (p.Y+vy*step)-(t.Y+tvy*step))
+			sep := length3((p.X+vx*step)-(t.X+tvx*step), (p.Y+vy*step)-(t.Y+tvy*step), (p.Z+vz*step)-(t.Z+tvz*step))
 			if sep < 700 {
 				danger += (700 - sep) / 100
 			}
@@ -870,7 +877,7 @@ func (g *Game) botSeparation(p *Player) (float64, float64, float64) {
 		if a == nil || a == p || a.Team != p.Team || a.Status != "alive" || a.Orbiting >= 0 {
 			continue
 		}
-		d := dist2d(p.X, p.Y, a.X, a.Y)
+		d := length3(a.X-p.X, a.Y-p.Y, a.Z-p.Z)
 		if d <= 0 || d >= sepMinSafe {
 			continue
 		}
@@ -921,11 +928,12 @@ func (g *Game) botGoOrbit(p *Player, pl *Planet, th combatThreat) bool {
 	if p.Orbiting == pl.N {
 		return true
 	}
-	d := dist2d(p.X, p.Y, pl.X, pl.Y)
+	d := length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z)
 	if d <= EntOrbDist && p.Speed <= OrbSpeed {
 		g.enterOrbit(p)
 		return p.Orbiting == pl.N
 	}
+	p.DesPitch = elevation(p.X, p.Y, p.Z, pl.X, pl.Y, pl.Z)
 	g.botNavigate(p, math.Atan2(pl.Y-p.Y, pl.X-p.X), g.botApproachSpeed(p, d), th)
 	return false
 }
@@ -939,7 +947,7 @@ func (g *Game) botNearestPlanet(p *Player, ok func(*Planet) bool) *Planet {
 		if !ok(pl) {
 			continue
 		}
-		if d := dist2d(p.X, p.Y, pl.X, pl.Y); d < bestD {
+		if d := length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z); d < bestD {
 			best, bestD = pl, d
 		}
 	}
@@ -953,7 +961,7 @@ func (g *Game) botBestTakePlanet(p *Player) *Planet {
 		if pl.Owner == p.Team || g.thirdSpace(pl) {
 			continue
 		}
-		d := dist2d(p.X, p.Y, pl.X, pl.Y)
+		d := length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z)
 		if d > 30000 {
 			continue
 		}
@@ -992,7 +1000,7 @@ func (g *Game) botPlanetToDefend(p *Player) *Planet {
 			if e == nil || e.Status != "alive" || e.Team == p.Team || e.Cloaked {
 				continue
 			}
-			d := dist2d(e.X, e.Y, pl.X, pl.Y)
+			d := length3(pl.X-e.X, pl.Y-e.Y, pl.Z-e.Z)
 			if d < 10000 {
 				threat += (10000 - d) / 1000
 				if e.Armies > 0 {
@@ -1003,7 +1011,7 @@ func (g *Game) botPlanetToDefend(p *Player) *Planet {
 		if threat <= 0 {
 			continue
 		}
-		score := threat*1000 - dist2d(p.X, p.Y, pl.X, pl.Y)/10
+		score := threat*1000 - length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z)/10
 		if pl.Flags&PlAgri != 0 {
 			score += 500
 		}
@@ -1024,7 +1032,7 @@ func (g *Game) botPlanetToRaid(p *Player) *Planet {
 		if pl.Owner == p.Team || pl.Owner == TeamNone || pl.Armies < 5 || g.thirdSpace(pl) {
 			continue
 		}
-		d := dist2d(p.X, p.Y, pl.X, pl.Y)
+		d := length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z)
 		if d > 20000 {
 			continue
 		}
@@ -1048,7 +1056,7 @@ func (g *Game) planetDefenders(pl *Planet, team int) (int, float64, float64, *Pl
 		if e == nil || e.Status != "alive" || e.Team == team || e.Cloaked {
 			continue
 		}
-		d := dist2d(e.X, e.Y, pl.X, pl.Y)
+		d := length3(pl.X-e.X, pl.Y-e.Y, pl.Z-e.Z)
 		if d > 10000 {
 			continue
 		}
@@ -1076,7 +1084,7 @@ func (g *Game) threatenedPlanet(p *Player) (*Planet, *Player, float64) {
 	var bestEnemy *Player
 	bestScore := 0.0
 	for _, pl := range g.planets {
-		if pl.Owner != p.Team || dist2d(p.X, p.Y, pl.X, pl.Y) > planetDefenseRadius {
+		if pl.Owner != p.Team || length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z) > planetDefenseRadius {
 			continue
 		}
 		score := 0.0
@@ -1086,7 +1094,7 @@ func (g *Game) threatenedPlanet(p *Player) (*Planet, *Player, float64) {
 			if e == nil || e.Status != "alive" || e.Team == p.Team || e.Cloaked {
 				continue
 			}
-			d := dist2d(e.X, e.Y, pl.X, pl.Y)
+			d := length3(pl.X-e.X, pl.Y-e.Y, pl.Z-e.Z)
 			var s float64
 			switch {
 			case d < 5000:
@@ -1112,7 +1120,7 @@ func (g *Game) threatenedPlanet(p *Player) (*Planet, *Player, float64) {
 	if bestPl == nil {
 		return nil, nil, 0
 	}
-	return bestPl, bestEnemy, dist2d(p.X, p.Y, bestEnemy.X, bestEnemy.Y)
+	return bestPl, bestEnemy, length3(bestEnemy.X-p.X, bestEnemy.Y-p.Y, bestEnemy.Z-p.Z)
 }
 
 func (g *Game) botDefendPlanet(p *Player, pl *Planet, enemy *Player, dist float64) {
@@ -1128,11 +1136,11 @@ func (g *Game) botDefendPlanet(p *Player, pl *Planet, enemy *Player, dist float6
 	if dist < 6000 {
 		optIntercept = 3500
 	}
-	toPlanet := math.Atan2(pl.Y-enemy.Y, pl.X-enemy.X)
-	ix := enemy.X + math.Cos(toPlanet)*optIntercept*0.7
-	iy := enemy.Y + math.Sin(toPlanet)*optIntercept*0.7
+	offset := vec3{pl.X - enemy.X, pl.Y - enemy.Y, pl.Z - enemy.Z}.unit().scale(optIntercept * 0.7)
+	ix, iy, iz := enemy.X+offset.X, enemy.Y+offset.Y, enemy.Z+offset.Z
+	p.DesPitch = elevation(p.X, p.Y, p.Z, ix, iy, iz)
 	th := g.botThreats(p)
-	if dist2d(p.X, p.Y, ix, iy) > 1500 || dist > 6000 {
+	if length3(ix-p.X, iy-p.Y, iz-p.Z) > 1500 || dist > 6000 {
 		speed := p.Ship.MaxSpeed
 		if dist <= 6000 {
 			speed = g.botCombatSpeed(p, dist)
@@ -1154,7 +1162,7 @@ func (g *Game) botDefendPlanet(p *Player, pl *Planet, enemy *Player, dist float6
 		b.Cooldown = 4
 	} else if dist < float64(PhaseDist*p.Ship.PhaserDamage/100) && p.Fuel > 1000 &&
 		p.PhaserBusy == 0 {
-		g.firePhaser(p, math.Atan2(enemy.Y-p.Y, enemy.X-p.X))
+		g.firePhaser(p, math.Atan2(enemy.Y-p.Y, enemy.X-p.X), elevation(p.X, p.Y, p.Z, enemy.X, enemy.Y, enemy.Z))
 		b.Cooldown = 8
 	}
 	if b.Cooldown == 0 {
@@ -1171,7 +1179,7 @@ func (g *Game) botNearestEnemy(p *Player) *Player {
 		if e == nil || e.Status != "alive" || e.Team == p.Team || e.Cloaked {
 			continue
 		}
-		if d := dist2d(p.X, p.Y, e.X, e.Y); d < bestD {
+		if d := length3(e.X-p.X, e.Y-p.Y, e.Z-p.Z); d < bestD {
 			best, bestD = e, d
 		}
 	}
@@ -1187,7 +1195,7 @@ func (g *Game) botBestTarget(p *Player) *Player {
 		b.TargetLock--
 		cur := g.players[b.Target]
 		if cur != nil && cur.Status == "alive" && cur.Team != p.Team && !cur.Cloaked &&
-			dist2d(p.X, p.Y, cur.X, cur.Y) < 30000 {
+			length3(cur.X-p.X, cur.Y-p.Y, cur.Z-p.Z) < 30000 {
 			best = cur
 			bestScore = g.botTargetScore(p, cur) + targetPersistenceBonus
 			locked = true
@@ -1200,7 +1208,7 @@ func (g *Game) botBestTarget(p *Player) *Player {
 		if e == nil || e.Status != "alive" || e.Team == p.Team || e.Cloaked || e == best {
 			continue
 		}
-		if dist2d(p.X, p.Y, e.X, e.Y) > 25000 {
+		if length3(e.X-p.X, e.Y-p.Y, e.Z-p.Z) > 25000 {
 			continue
 		}
 		score := g.botTargetScore(p, e)
@@ -1221,7 +1229,7 @@ func (g *Game) botBestTarget(p *Player) *Player {
 }
 
 func (g *Game) botTargetScore(p, t *Player) float64 {
-	d := math.Max(dist2d(p.X, p.Y, t.X, t.Y), 1)
+	d := math.Max(length3(t.X-p.X, t.Y-p.Y, t.Z-p.Z), 1)
 	score := 20000 / d
 	dmg := float64(t.Damage) / float64(t.Ship.MaxDamage)
 	switch {
@@ -1241,7 +1249,7 @@ func (g *Game) botTargetScore(p, t *Player) float64 {
 	isolated := true
 	for _, a := range g.players {
 		if a != nil && a != t && a.Team == t.Team && a.Status == "alive" &&
-			dist2d(a.X, a.Y, t.X, t.Y) < 5000 {
+			length3(t.X-a.X, t.Y-a.Y, t.Z-a.Z) < 5000 {
 			isolated = false
 			break
 		}
@@ -1256,7 +1264,7 @@ func (g *Game) botAlliesNear(p *Player, radius float64) int {
 	n := 0
 	for _, a := range g.players {
 		if a != nil && a != p && a.Team == p.Team && a.Status == "alive" &&
-			dist2d(p.X, p.Y, a.X, a.Y) < radius {
+			length3(a.X-p.X, a.Y-p.Y, a.Z-p.Z) < radius {
 			n++
 		}
 	}
@@ -1265,7 +1273,7 @@ func (g *Game) botAlliesNear(p *Player, radius float64) int {
 
 func (g *Game) botPatrol(p *Player, th combatThreat) {
 	b := p.Bot
-	if b.GoalX == 0 && b.GoalY == 0 || dist2d(p.X, p.Y, b.GoalX, b.GoalY) < 3000 {
+	if b.GoalX == 0 && b.GoalY == 0 || length3(b.GoalX-p.X, b.GoalY-p.Y, b.GoalZ-p.Z) < 3000 {
 		// new destination: our space when weak, frontline planet otherwise
 		owned := 0
 		for _, pl := range g.planets {
@@ -1290,19 +1298,22 @@ func (g *Game) botPatrol(p *Player, th combatThreat) {
 			}
 		}
 		b.GoalX = math.Max(5000, math.Min(GWidth-5000, base.X+float64(rand.Intn(15000)-7500)))
+		b.GoalZ = base.Z + float64(rand.Intn(10000)-5000)
 		b.GoalY = math.Max(5000, math.Min(GWidth-5000, base.Y+float64(rand.Intn(15000)-7500)))
 	}
+	p.DesPitch = elevation(p.X, p.Y, p.Z, b.GoalX, b.GoalY, b.GoalZ)
 	g.botNavigate(p, math.Atan2(b.GoalY-p.Y, b.GoalX-p.X), p.Ship.MaxSpeed*8/10, th)
 	b.Cooldown = 10
 }
 
 func (g *Game) botSafeArea(p *Player) {
-	var cx, cy float64
+	var cx, cy, cz float64
 	n := 0
 	for _, pl := range g.planets {
 		if pl.Owner == p.Team {
 			cx += pl.X
 			cy += pl.Y
+			cz += pl.Z
 			n++
 		}
 	}
@@ -1315,7 +1326,9 @@ func (g *Game) botSafeArea(p *Player) {
 	angle := float64(p.ID) * 0.5
 	cx = cx/float64(n) + 3000*math.Cos(angle)
 	cy = cy/float64(n) + 3000*math.Sin(angle)
-	if dist2d(p.X, p.Y, cx, cy) > 1000 {
+	cz /= float64(n)
+	p.DesPitch = elevation(p.X, p.Y, p.Z, cx, cy, cz)
+	if length3(cx-p.X, cy-p.Y, cz-p.Z) > 1000 {
 		th := g.botThreats(p)
 		g.botNavigate(p, math.Atan2(cy-p.Y, cx-p.X), p.Ship.MaxSpeed/2, th)
 	} else {

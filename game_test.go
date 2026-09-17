@@ -385,14 +385,14 @@ func TestCheckOrigin(t *testing.T) {
 	if !checkOrigin(req("", "localhost:9701")) {
 		t.Fatal("no Origin header (non-browser client) should pass")
 	}
-	t.Setenv("NETREKFP_ORIGINS", "https://game.example, https://other.example")
+	t.Setenv("NETREK3D_ORIGINS", "https://game.example, https://other.example")
 	if !checkOrigin(req("https://other.example", "internal-host")) {
 		t.Fatal("listed origin should pass with override")
 	}
 	if checkOrigin(req("https://evil.example", "internal-host")) {
 		t.Fatal("unlisted origin must be rejected with override")
 	}
-	t.Setenv("NETREKFP_ORIGINS", "*")
+	t.Setenv("NETREK3D_ORIGINS", "*")
 	if !checkOrigin(req("https://anywhere.example", "internal-host")) {
 		t.Fatal("* should disable the check")
 	}

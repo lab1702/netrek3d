@@ -1,0 +1,19 @@
+name: Test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: node --check web/game.js && node --check web/gl.js
+      - run: node --test tests/client.test.cjs

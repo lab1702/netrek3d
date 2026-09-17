@@ -146,7 +146,7 @@ function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
 
 function connect() {
   // resolve relative to the page so a reverse proxy can mount us under a
-  // subpath (e.g. caddy handle_path /netrekfp/*)
+  // subpath (e.g. caddy handle_path /netrek3d/*)
   const base = location.pathname.endsWith("/")
     ? location.pathname : location.pathname.replace(/[^/]*$/, "");
   ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") +
@@ -267,22 +267,15 @@ function logMsg(text) {
 
 // ---------- input ----------
 function bearingFromScreen(mx, my, you) {
-  // ray through pixel onto the y=0 plane; fall back to horizontal angle offset
-  const w = innerWidth, h = innerHeight;
   const tanF = Math.tan(65 * Math.PI / 360);
-  const ndcX = (mx / w) * 2 - 1, ndcY = 1 - (my / h) * 2;
-  const camX = ndcX * tanF * (w / h), camY = ndcY * tanF;
-  const yaw = you.d;
-  // camera space: forward (cos,0,sin), right (-sin,0,cos), up (0,1,0)
-  const dx = Math.cos(yaw) - camX * Math.sin(yaw);
-  const dz = Math.sin(yaw) + camX * Math.cos(yaw);
-  const dy = camY;
-  if (dy < -0.02) {
-    const t = 160 / -dy; // EYE_HEIGHT
-    const wx = you.x + dx * t, wz = you.y + dz * t;
-    return Math.atan2(wz - you.y, wx - you.x);
-  }
-  return Math.atan2(dz, dx);
+  const rx = ((mx / innerWidth) * 2 - 1) * tanF * innerWidth / innerHeight;
+  const up = (1 - (my / innerHeight) * 2) * tanF;
+  const c = Math.cos(you.d), n = Math.sin(you.d);
+  const cp = Math.cos(you.pitch), sp = Math.sin(you.pitch);
+  const x = c*cp - rx*n - up*c*sp;
+  const y = n*cp + rx*c - up*n*sp;
+  const z = sp + up*cp;
+  return { d: Math.atan2(y, x), pitch: Math.atan2(z, Math.hypot(x, y)) };
 }
 
 addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
@@ -296,15 +289,15 @@ glCanvas.addEventListener("mousedown", e => {
     const g = mapToGalaxy(e.clientX, e.clientY);
     if (!g) return;
     if (e.button === 2) {
-      send({ t: "course", d: Math.atan2(g[1] - you.y, g[0] - you.x) });
+      send({ t: "course", d: Math.atan2(g[1] - you.y, g[0] - you.x), pitch: 0 });
     } else if (e.button === 0) {
       send({ t: "lock", v: nearestPlanetTo(g[0], g[1]) });
     }
     return;
   }
-  if (e.button === 0) send({ t: "torp", d });
-  else if (e.button === 1) { send({ t: "phaser", d }); e.preventDefault(); }
-  else if (e.button === 2) send({ t: "course", d });
+  if (e.button === 0) send({ t: "torp", ...d });
+  else if (e.button === 1) { send({ t: "phaser", ...d }); e.preventDefault(); }
+  else if (e.button === 2) send({ t: "course", ...d });
 });
 
 addEventListener("keydown", e => {
@@ -317,10 +310,15 @@ addEventListener("keydown", e => {
   // shift modifier set; derive the logical key instead of trusting e.key
   const key = e.shiftKey && e.key.length === 1 ? e.key.toUpperCase() : e.key;
   switch (key) {
+    case "ArrowUp": case "ArrowDown": case "ArrowLeft": case "ArrowRight":
+      if (you) send({ t: "course", d: you.d + (key === "ArrowRight" ? 0.2 : key === "ArrowLeft" ? -0.2 : 0),
+        pitch: Math.max(-Math.PI/2, Math.min(Math.PI/2, you.pitch + (key === "ArrowUp" ? 0.2 : key === "ArrowDown" ? -0.2 : 0))) });
+      e.preventDefault(); break;
+    case "h": if (you) send({ t: "course", d: you.d, pitch: 0 }); break;
     case "=": send({ t: "speed", v: 99 }); break; // server clamps to maxspeed
     case "s": send({ t: "shields" }); break;
-    case "t": if (you) send({ t: "torp", d: bearingFromScreen(mouse.x, mouse.y, you) }); break;
-    case "f": if (you) send({ t: "phaser", d: bearingFromScreen(mouse.x, mouse.y, you) }); break;
+    case "t": if (you) send({ t: "torp", ...bearingFromScreen(mouse.x, mouse.y, you) }); break;
+    case "f": if (you) send({ t: "phaser", ...bearingFromScreen(mouse.x, mouse.y, you) }); break;
     case "p": togglePlayerList(); break;
     case "o": send({ t: "orbit" }); break;
     case "b": send({ t: "bomb" }); break;
@@ -339,8 +337,8 @@ addEventListener("keydown", e => {
       const y2 = interpYou();
       let best = -1, bd = 80; // screen px
       for (const pl of planets) {
-        if (Math.hypot(pl.x - y2.x, pl.y - y2.y) > 30000) continue;
-        const s = R.project(pl.x, 0, pl.y);
+        if (Math.hypot(pl.x - y2.x, pl.y - y2.y, pl.z - y2.z) > 30000) continue;
+        const s = R.project(pl.x, pl.z, pl.y);
         if (!s) continue;
         const d = Math.hypot(s[0] - mouse.x, s[1] - mouse.y);
         if (d < bd) { bd = d; best = pl.n; }
@@ -373,7 +371,7 @@ function interpYou() {
   const y = curSnap.you;
   if (!prevSnap || prevSnap.you.st !== "alive") return y;
   const f = interpFrac(), p = prevSnap.you;
-  return { ...y, x: lerp(p.x, y.x, f), y: lerp(p.y, y.y, f), d: lerpAngle(p.d, y.d, f) };
+  return { ...y, x: lerp(p.x, y.x, f), y: lerp(p.y, y.y, f), z: lerp(p.z, y.z, f), pitch: lerp(p.pitch, y.pitch, f), d: lerpAngle(p.d, y.d, f) };
 }
 function interpList(cur, prev, f) {
   const prevById = {};
@@ -383,8 +381,9 @@ function interpList(cur, prev, f) {
     if (!p) return c;
     // never interpolate across a respawn or teleport: a dead ship parked at
     // its death site would streak ~35k units to the homeworld in one snap
-    if (p.st !== c.st || Math.hypot(c.x - p.x, c.y - p.y) > 2000) return c;
-    return { ...c, x: lerp(p.x, c.x, f), y: lerp(p.y, c.y, f),
+    if (p.st !== c.st || Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z) > 2000) return c;
+    return { ...c, x: lerp(p.x, c.x, f), y: lerp(p.y, c.y, f), z: lerp(p.z, c.z, f),
+             pitch: c.pitch !== undefined ? lerp(p.pitch, c.pitch, f) : undefined,
              d: c.d !== undefined ? lerpAngle(p.d, c.d, f) : undefined };
   });
 }
@@ -403,6 +402,7 @@ function bar(label, val, max, warnHigh, color, text) {
 }
 
 function updateHUD(you, players) {
+  document.getElementById("altitude").textContent = `Z ${Math.round(curSnap.you.z)}  ·  PITCH ${Math.round(curSnap.you.pitch*180/Math.PI)}°`;
   const compass = ((you.d * 180 / Math.PI + 90) % 360 + 360) % 360;
   hudLeft.innerHTML =
     bar("WARP", you.sp, you.maxsp, false, "var(--amber)", `${you.sp}/${you.maxsp}`) +
@@ -443,7 +443,7 @@ function updateHUD(you, players) {
   let nearest = 1e9;
   for (const p of players) {
     if (p.i === myId || p.tm === you.tm || p.st !== "alive") continue;
-    nearest = Math.min(nearest, Math.hypot(p.x - you.x, p.y - you.y));
+    nearest = Math.min(nearest, Math.hypot(p.x - you.x, p.y - you.y, p.z - you.z));
   }
   const [txt, col] = nearest < 7000 ? ["RED ALERT", "var(--danger)"] :
     nearest < 15000 ? ["YELLOW ALERT", "var(--amber)"] : ["CONDITION GREEN", "var(--green)"];
@@ -506,7 +506,7 @@ function drawMap(you, players) {
       ctx.strokeStyle = "#ffb74d";
       ctx.beginPath(); ctx.arc(x, y, 8, 0, 7); ctx.stroke();
     }
-    ctx.fillText(`${pl.name.split(" ")[0]} ${pl.a}`, x, y + 14);
+    ctx.fillText(`${pl.name.split(" ")[0]} ${pl.a} Z${Math.round(pl.z/1000)}k`, x, y + 14);
     if (pl.f & 4) { ctx.fillStyle = "#8d6e63"; ctx.fillText("agri", x, y + 25); }
   }
   for (const p of players) {
@@ -518,7 +518,7 @@ function drawMap(you, players) {
     ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4, 5); ctx.lineTo(-4, 5); ctx.closePath();
     if (p.i === myId) { ctx.fill(); } else { ctx.stroke(); }
     ctx.restore();
-    ctx.fillText(p.nm, x, y - 9);
+    ctx.fillText(`${p.nm} Z${Math.round(p.z/1000)}k`, x, y - 9);
   }
   ctx.fillStyle = "#cfd8dc";
   ctx.textAlign = "left";
@@ -542,8 +542,10 @@ function drawMinimap(ctx, you, players) {
   const px = (x, y) => [cx + (x - you.x) / MINI_RANGE * (S / 2),
                         cy + (y - you.y) / MINI_RANGE * (S / 2)];
   for (const pl of planets) {
-    if (Math.abs(pl.x - you.x) > MINI_RANGE || Math.abs(pl.y - you.y) > MINI_RANGE) continue;
+    if (Math.hypot(pl.x-you.x, pl.y-you.y, pl.z-you.z) > MINI_RANGE) continue;
     const [x, y] = px(pl.x, pl.y);
+    ctx.font = "10px monospace"; ctx.fillStyle = "#cfd8dc";
+    ctx.fillText(`${pl.z>=you.z ? "+" : ""}${Math.round((pl.z-you.z)/1000)}k`, x+6, y-4);
     ctx.fillStyle = TEAM_CSS[pl.o] || TEAM_CSS.I;
     ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill();
     if (curSnap.you.lk === pl.n) {
@@ -562,9 +564,11 @@ function drawMinimap(ctx, you, players) {
   };
   for (const p of players) {
     if (p.st !== "alive" || p.i === myId) continue;
-    if (Math.abs(p.x - you.x) > MINI_RANGE || Math.abs(p.y - you.y) > MINI_RANGE) continue;
+    if (Math.hypot(p.x-you.x, p.y-you.y, p.z-you.z) > MINI_RANGE) continue;
     const [x, y] = px(p.x, p.y);
     wedge(x, y, p.d, TEAM_CSS[p.tm], p.cl ? 0.4 : 1, 4);
+    ctx.font = "10px monospace"; ctx.fillStyle = TEAM_CSS[p.tm];
+    ctx.fillText(`${p.z>=you.z ? "+" : ""}${Math.round((p.z-you.z)/1000)}k`, x+6, y-4);
   }
   wedge(cx, cy, you.d, "#eceff1", 1, 5); // own ship
   ctx.restore();
@@ -590,7 +594,7 @@ function drawOverlay(labels, you, players) {
   ctx.moveTo(mouse.x, mouse.y + 3); ctx.lineTo(mouse.x, mouse.y + 10);
   ctx.stroke();
   // course marker: where the ship is heading
-  const ahead = R.project(you.x + Math.cos(you.d) * 8000, 60, you.y + Math.sin(you.d) * 8000);
+  const ahead = R.project(you.x + Math.cos(you.d)*Math.cos(you.pitch)*8000, you.z + Math.sin(you.pitch)*8000, you.y + Math.sin(you.d)*Math.cos(you.pitch)*8000);
   if (ahead) {
     ctx.strokeStyle = "#546e7a";
     ctx.strokeRect(ahead[0] - 4, ahead[1] - 4, 8, 8);
@@ -613,48 +617,48 @@ function frame() {
   booms = booms.filter(b => now - b.at < 700);
   const lights = booms.map(b => {
     const age = (now - b.at) / 700;
-    return { x: b.x, y: b.y, r: Math.max(2500, 6000 * b.s),
+    return { x: b.x, y: b.y, z: b.z, r: Math.max(2500, 6000 * b.s),
              i: (1 - age) * (0.9 + 0.9 * b.s),
-             d2: (b.x - you.x) ** 2 + (b.y - you.y) ** 2 };
+             d2: (b.x - you.x) ** 2 + (b.y - you.y) ** 2 + (b.z - you.z) ** 2 };
   }).sort((a, b) => a.d2 - b.d2);
 
-  R.begin(you.x, you.y, you.d, lights);
+  R.begin(you.x, you.y, you.d, lights, you.z, you.pitch);
   const labels = [];
 
   for (const pl of planets) {
-    const dist = Math.hypot(pl.x - you.x, pl.y - you.y);
-    const alpha = R.drawPlanet(pl.x, pl.y, pl.o, dist);
+    const dist = Math.hypot(pl.x - you.x, pl.y - you.y, pl.z - you.z);
+    const alpha = R.drawPlanet(pl.x, pl.y, pl.o, dist, pl.z);
     if (alpha > 0.05 && dist < 20000) {
-      const s = R.project(pl.x, 700, pl.y);
+      const s = R.project(pl.x, pl.z + 700, pl.y);
       if (s) labels.push({ x: s[0], y: s[1] - 8, text: `${pl.name} ${pl.a}`,
                            color: TEAM_CSS[pl.o] || TEAM_CSS.I, alpha });
-      const sb = R.project(pl.x, -700, pl.y); // range below, same rules as the name
+      const sb = R.project(pl.x, pl.z - 700, pl.y); // range below, same rules as the name
       if (sb) labels.push({ x: sb[0], y: sb[1] + 14, text: `${Math.round(dist)}`,
                             color: TEAM_CSS[pl.o] || TEAM_CSS.I, alpha });
     }
   }
   for (const p of players) {
     if (p.i === myId || p.st !== "alive") continue;
-    const dist = Math.hypot(p.x - you.x, p.y - you.y);
-    const alpha = R.drawShip(p.x, p.y, p.d, p.tm, dist, !!p.cl);
+    const dist = Math.hypot(p.x - you.x, p.y - you.y, p.z - you.z);
+    const alpha = R.drawShip(p.x, p.y, p.d, p.tm, dist, !!p.cl, p.z, p.pitch);
     if (alpha > 0.05 && dist < 9000) {
-      const s = R.project(p.x, 260, p.y);
+      const s = R.project(p.x, p.z + 260, p.y);
       if (s) labels.push({ x: s[0], y: s[1] - 6, text: `${p.nm} (${p.s})`,
                            color: TEAM_CSS[p.tm], alpha });
-      const sb = R.project(p.x, -260, p.y); // range below, same rules as the name
+      const sb = R.project(p.x, p.z - 260, p.y); // range below, same rules as the name
       if (sb) labels.push({ x: sb[0], y: sb[1] + 12, text: `${Math.round(dist)}`,
                             color: TEAM_CSS[p.tm], alpha });
     }
   }
   for (const tp of torps) {
-    const dist = Math.hypot(tp.x - you.x, tp.y - you.y);
-    R.drawTorp(tp.x, tp.y, tp.tm, dist);
+    const dist = Math.hypot(tp.x - you.x, tp.y - you.y, tp.z - you.z);
+    R.drawTorp(tp.x, tp.y, tp.tm, dist, tp.z);
   }
   phaserFx = phaserFx.filter(ph => ph.until > now);
   for (const ph of phaserFx)
-    R.drawPhaser(ph.fx, ph.fy, ph.tx, ph.ty, ph.tm, (ph.until - now) / 300);
+    R.drawPhaser(ph.fx, ph.fy, ph.tx, ph.ty, ph.tm, (ph.until - now) / 300, ph.fz, ph.tz);
   for (const b of booms)
-    R.drawExplosion(b.x, b.y, (now - b.at) / 700, b.s);
+    R.drawExplosion(b.x, b.y, (now - b.at) / 700, b.s, b.z);
   R.finish();
 
   if (mapOn) {

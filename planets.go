@@ -26,12 +26,12 @@ const (
 )
 
 type Planet struct {
-	N      int
-	Name   string
-	X, Y   float64
-	Owner  int
-	Armies int
-	Flags  int
+	N       int
+	Name    string
+	X, Y, Z float64
+	Owner   int
+	Armies  int
+	Flags   int
 }
 
 type virginPlanet struct {
@@ -94,8 +94,8 @@ var frontPlanets = [4][5]int{
 	{1, 2, 4, 6, 3}, {14, 18, 13, 17, 11}, {22, 28, 23, 21, 27}, {31, 32, 33, 35, 36},
 }
 
-const topArmies = 30    // warmup army count, ntserv/data.c top_armies
-const tmodeArmies = 12  // INL tournament start_armies (robots/inl.c:125)
+const topArmies = 30   // warmup army count, ntserv/data.c top_armies
+const tmodeArmies = 12 // INL tournament start_armies (robots/inl.c:125)
 
 // resetPlanets rebuilds the galaxy: virginal layout, `armies` on every planet,
 // and the INL pl_reset_inl() randomized AGRI/REPAIR/FUEL distribution per
@@ -105,16 +105,16 @@ const tmodeArmies = 12  // INL tournament start_armies (robots/inl.c:125)
 func resetPlanets(armies int) []*Planet {
 	pls := make([]*Planet, 40)
 	for i, v := range virginal {
-		pls[i] = &Planet{N: i, Name: v.name, X: v.x, Y: v.y, Owner: v.owner,
+		pls[i] = &Planet{N: i, Name: v.name, X: v.x, Y: v.y, Z: planetAltitude(i), Owner: v.owner,
 			Armies: armies, Flags: v.flags}
 	}
 	for i := 0; i < 4; i++ {
 		core, front := corePlanets[i], frontPlanets[i]
 		pls[core[rand.Intn(4)]].Flags |= PlAgri // one core AGRI
 		if rand.Intn(2) == 1 {
-			a := rand.Intn(2)                        // AGRI on the inner front pair {0,1}
-			pls[front[a]].Flags |= PlAgri            //
-			pls[front[1-a]].Flags |= PlFuel          // INL: fuel next to the agri
+			a := rand.Intn(2)               // AGRI on the inner front pair {0,1}
+			pls[front[a]].Flags |= PlAgri   //
+			pls[front[1-a]].Flags |= PlFuel // INL: fuel next to the agri
 			pls[front[rand.Intn(3)+2]].Flags |= PlRepair
 			for j := 0; j < 2; j++ { // 2 FUEL on the outer front {2,3,4}
 				k := rand.Intn(3)
@@ -124,9 +124,9 @@ func resetPlanets(armies int) []*Planet {
 				pls[front[k+2]].Flags |= PlFuel
 			}
 		} else {
-			a := rand.Intn(2)                        // AGRI on the outer front pair {3,4}
-			pls[front[a+3]].Flags |= PlAgri          //
-			pls[front[(1-a)+3]].Flags |= PlFuel      // INL: fuel next to the agri
+			a := rand.Intn(2)                   // AGRI on the outer front pair {3,4}
+			pls[front[a+3]].Flags |= PlAgri     //
+			pls[front[(1-a)+3]].Flags |= PlFuel // INL: fuel next to the agri
 			pls[front[rand.Intn(3)]].Flags |= PlRepair
 			for j := 0; j < 2; j++ { // 2 FUEL on the inner front {0,1,2}
 				k := rand.Intn(3)
@@ -146,4 +146,10 @@ func resetPlanets(armies int) []*Planet {
 		}
 	}
 	return pls
+}
+
+// Identical depth distribution per empire keeps resource travel balanced.
+// Homeworlds share the equator; the remaining worlds occupy nine depth layers.
+func planetAltitude(i int) float64 {
+	return []float64{0, -24000, 18000, -12000, 6000, 30000, -30000, 12000, -6000, 24000}[i%10]
 }

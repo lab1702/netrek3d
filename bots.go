@@ -6,7 +6,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
 )
 
@@ -18,20 +17,21 @@ var botNames = []string{
 }
 
 type botState struct {
-	Cooldown       int     // ticks until next decision
-	Role           botRole // persistent free-play assignment
-	Target         int     // current combat target id, -1
-	TargetLock     int     // ticks remaining on target lock (prevents thrashing)
-	TargetValue    float64
-	PlanetApproach int // planet we were heading to before a fight, -1
-	DefenseTarget  int // planet we are defending, -1
-	PrevDamage     int
-	HitTimer       int // >0 for a while after taking damage (unseen attackers)
-	RespawnDelay   int
-	GoalX, GoalY   float64 // patrol destination (0,0 = none)
-	VolleyLeft     int     // torps still to fire in the current spread
-	VolleyIdx      int
-	VolleyDir      float64
+	Cooldown            int     // ticks until next decision
+	Role                botRole // persistent free-play assignment
+	Target              int     // current combat target id, -1
+	TargetLock          int     // ticks remaining on target lock (prevents thrashing)
+	TargetValue         float64
+	PlanetApproach      int // planet we were heading to before a fight, -1
+	DefenseTarget       int // planet we are defending, -1
+	PrevDamage          int
+	HitTimer            int // >0 for a while after taking damage (unseen attackers)
+	RespawnDelay        int
+	GoalX, GoalY, GoalZ float64 // patrol destination (0,0 = none)
+	VolleyLeft          int     // torps still to fire in the current spread
+	VolleyIdx           int
+	VolleyDir           float64
+	VolleyPitch         float64
 }
 
 type botRole int
@@ -298,9 +298,4 @@ func (g *Game) checkBotScuttle() {
 	if armed && !wasScuttling {
 		g.say("No humans left — bots self destructing.")
 	}
-}
-
-// dist2d is the workhorse of everything below.
-func dist2d(x1, y1, x2, y2 float64) float64 {
-	return math.Hypot(x2-x1, y2-y1)
 }
