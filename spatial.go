@@ -18,12 +18,33 @@ func (v vec3) unit() vec3 {
 	return vec3{}
 }
 func length3(x, y, z float64) float64 { return math.Hypot(math.Hypot(x, y), z) }
-func clampPitch(p float64) float64 {
+
+// wrapPitch permits complete loops while keeping network angles bounded.
+func wrapPitch(p float64) float64 {
 	if math.IsNaN(p) || math.IsInf(p, 0) {
 		return 0
 	}
-	return math.Max(-math.Pi/2, math.Min(math.Pi/2, p))
+	return math.Remainder(p, 2*math.Pi)
 }
+
+// A direction has two equivalent yaw/pitch representations. Keep the one
+// closest to the previous attitude so crossing a pole does not flip the camera.
+func setHeading(p *Player, v vec3) {
+	yaw := p.Dir
+	if math.Hypot(v.X, v.Y) > 1e-10 {
+		yaw = math.Atan2(v.Y, v.X)
+	}
+	pitch := math.Atan2(v.Z, math.Hypot(v.X, v.Y))
+	otherYaw, otherPitch := yaw+math.Pi, math.Pi-pitch
+	distance := func(y, e float64) float64 {
+		return math.Hypot(math.Remainder(y-p.Dir, 2*math.Pi), math.Remainder(e-p.Pitch, 2*math.Pi))
+	}
+	if distance(otherYaw, otherPitch) < distance(yaw, pitch) {
+		yaw, pitch = otherYaw, otherPitch
+	}
+	p.Dir, p.Pitch = math.Remainder(yaw, 2*math.Pi), wrapPitch(pitch)
+}
+
 func heading(yaw, pitch float64) vec3 {
 	return vec3{math.Cos(yaw) * math.Cos(pitch), math.Sin(yaw) * math.Cos(pitch), math.Sin(pitch)}
 }
@@ -32,15 +53,14 @@ func (g *Game) placeOrbit(p *Player, pl *Planet, r vec3) {
 	r = r.unit()
 	p.X, p.Y, p.Z = pl.X+OrbDist*r.X, pl.Y+OrbDist*r.Y, pl.Z+OrbDist*r.Z
 	v := p.OrbitNormal.cross(r).unit()
-	p.Dir = math.Atan2(v.Y, v.X)
-	p.Pitch = math.Atan2(v.Z, math.Hypot(v.X, v.Y))
+	setHeading(p, v)
 	p.DesDir, p.DesPitch = p.Dir, p.Pitch
 }
 func turnToward(p *Player, step float64) {
 	a, b := heading(p.Dir, p.Pitch), heading(p.DesDir, p.DesPitch)
 	angle := math.Acos(math.Max(-1, math.Min(1, a.dot(b))))
 	if angle <= step {
-		p.Dir, p.Pitch = p.DesDir, p.DesPitch
+		setHeading(p, b)
 		return
 	}
 	tangent := b.add(a.scale(-a.dot(b))).unit()
@@ -48,7 +68,7 @@ func turnToward(p *Player, step float64) {
 		tangent = vec3{-math.Sin(p.Dir), math.Cos(p.Dir), 0}
 	}
 	v := a.scale(math.Cos(step)).add(tangent.scale(math.Sin(step)))
-	p.Dir, p.Pitch = math.Atan2(v.Y, v.X), math.Atan2(v.Z, math.Hypot(v.X, v.Y))
+	setHeading(p, v)
 }
 
 // steeringAxes accepts only a finite vector inside the unit control disc.

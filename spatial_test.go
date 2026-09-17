@@ -192,12 +192,12 @@ func TestBotOrbitsElevatedPlanet(t *testing.T) {
 		t.Fatalf("bot failed to reach elevated planet: (%v,%v,%v)", p.X, p.Y, p.Z)
 	}
 }
-func TestPitchCommandClampAndTurnRate(t *testing.T) {
+func TestPitchCommandWrapAndTurnRate(t *testing.T) {
 	g := NewGame()
 	p := addPlayer(t, g, "pilot", "F", "CA").player
 	g.Command(p, "course", 0, 0, 100)
-	if p.DesPitch != math.Pi/2 {
-		t.Fatal("pitch not clamped")
+	if p.DesPitch != math.Remainder(100, 2*math.Pi) {
+		t.Fatal("pitch not wrapped")
 	}
 	p.Dir, p.Pitch = 0, 0
 	p.DesDir, p.DesPitch = 1, 0.9

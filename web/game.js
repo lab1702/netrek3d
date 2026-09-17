@@ -332,7 +332,7 @@ addEventListener("keydown", e => {
   switch (key) {
     case "ArrowUp": case "ArrowDown": case "ArrowLeft": case "ArrowRight":
       if (you) send({ t: "course", d: you.d + (key === "ArrowRight" ? 0.2 : key === "ArrowLeft" ? -0.2 : 0),
-        pitch: Math.max(-Math.PI/2, Math.min(Math.PI/2, you.pitch + (key === "ArrowUp" ? 0.2 : key === "ArrowDown" ? -0.2 : 0))) });
+        pitch: you.pitch + (key === "ArrowUp" ? 0.2 : key === "ArrowDown" ? -0.2 : 0) });
       e.preventDefault(); break;
     case "h": if (you) send({ t: "course", d: you.d, pitch: 0 }); break;
     case "=": send({ t: "speed", v: 99 }); break; // server clamps to maxspeed
@@ -386,7 +386,7 @@ function interpYou() {
   const y = curSnap.you;
   if (!prevSnap || prevSnap.you.st !== "alive") return y;
   const f = interpFrac(), p = prevSnap.you;
-  return { ...y, x: lerp(p.x, y.x, f), y: lerp(p.y, y.y, f), z: lerp(p.z, y.z, f), pitch: lerp(p.pitch, y.pitch, f), d: lerpAngle(p.d, y.d, f) };
+  return { ...y, x: lerp(p.x, y.x, f), y: lerp(p.y, y.y, f), z: lerp(p.z, y.z, f), pitch: lerpAngle(p.pitch, y.pitch, f), d: lerpAngle(p.d, y.d, f) };
 }
 function interpList(cur, prev, f) {
   const prevById = {};
@@ -398,7 +398,7 @@ function interpList(cur, prev, f) {
     // its death site would streak ~35k units to the homeworld in one snap
     if (p.st !== c.st || Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z) > 2000) return c;
     return { ...c, x: lerp(p.x, c.x, f), y: lerp(p.y, c.y, f), z: lerp(p.z, c.z, f),
-             pitch: c.pitch !== undefined ? lerp(p.pitch, c.pitch, f) : undefined,
+             pitch: c.pitch !== undefined ? lerpAngle(p.pitch, c.pitch, f) : undefined,
              d: c.d !== undefined ? lerpAngle(p.d, c.d, f) : undefined };
   });
 }

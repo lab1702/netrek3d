@@ -342,7 +342,7 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int, pitches ...f
 	}
 	pitch := p.Pitch
 	if len(pitches) > 0 {
-		pitch = clampPitch(pitches[0])
+		pitch = wrapPitch(pitches[0])
 	}
 	switch cmd {
 	case "steer":
@@ -466,7 +466,7 @@ func (g *Game) breakOrbit(p *Player) {
 func (g *Game) fireTorp(p *Player, dir float64, pitches ...float64) {
 	pitch := p.Pitch
 	if len(pitches) > 0 {
-		pitch = clampPitch(pitches[0])
+		pitch = wrapPitch(pitches[0])
 	}
 	s := p.Ship
 	if p.WLock || p.Cloaked || p.RepairMode || p.NTorps >= MaxTorps ||
@@ -488,7 +488,7 @@ func (g *Game) fireTorp(p *Player, dir float64, pitches ...float64) {
 func (g *Game) firePhaser(p *Player, dir float64, pitches ...float64) {
 	pitch := p.Pitch
 	if len(pitches) > 0 {
-		pitch = clampPitch(pitches[0])
+		pitch = wrapPitch(pitches[0])
 	}
 	s := p.Ship
 	if p.WLock || p.Cloaked || p.RepairMode || p.PhaserBusy > 0 || p.Fuel < s.PhaserCost {
@@ -806,7 +806,7 @@ func (g *Game) movePlayer(p *Player) {
 	// still limits every change, including diagonal yaw/pitch input.
 	if p.Steering {
 		p.DesDir = math.Remainder(p.Dir+p.SteerX*math.Pi/20, 2*math.Pi)
-		p.DesPitch = clampPitch(p.Pitch + p.SteerY*math.Pi/20)
+		p.DesPitch = wrapPitch(p.Pitch + p.SteerY*math.Pi/20)
 	}
 	// Rotate along the shortest great-circle arc at the ship's turn rate.
 	if p.Speed == 0 {

@@ -22,7 +22,7 @@ local radar is a tilted, heading-up 3D view with a 20k spherical range. Contacts
 above/below your altitude plane have vertical stems (dashed below); diamonds
 are ships and circles are planets. It stays vertically stable while pitching,
 and labels your planet lock and nearby threats with relative altitude. Flight uses yaw and
-pitch with a stable up direction; independent roll and strafing are not implemented.
+pitch with continuous full loops; independent roll and strafing are not implemented.
 
 This project is developed separately in `lab1702/netrek3d`. The original repository
 is not configured as a push remote. Its MIT license and history are retained.
@@ -112,7 +112,8 @@ Hold the right mouse button and move the pointer away from the center to steer.
 The small center ring is a neutral zone; outside it, response increases smoothly
 with distance. Near-center input uses only part of the available turn rate; edge
 input uses the maximum allowed by your ship and warp speed, capped at 90°/second.
-The view stays vertically stable, with pitch limited to straight up/down.
+Pitch continues through straight up/down into full loops. Equivalent heading angles
+are kept continuous at the poles, and both angles interpolate across their wrap.
 
 Release the button to hold the current heading. Steering also stops when opening
 the map or chat, switching to another navigation mode, or losing window focus.
@@ -153,7 +154,7 @@ vertical weapon hits, altitude isolation of area effects, inclined orbit stabili
 autopilot convergence, 3D bot intercepts, and wire serialization. Existing Netrek
 rule and WebSocket regression tests remain in place.
 
-Protocol version 2 adds `z` to positions and `pitch` (radians, -π/2 through +π/2)
+Protocol version 2 adds `z` to positions and `pitch` (radians, wrapped to -π through +π)
 to ship state and course/weapon commands. Phaser effects carry `fz` and `tz`;
 explosions carry `z`. The welcome message advertises `protocol: 2, dimensions: 3`.
 The `steer` command uses `v: 1` for held input, `d`/`pitch` for normalized

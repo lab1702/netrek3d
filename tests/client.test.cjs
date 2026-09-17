@@ -10,10 +10,10 @@ const game = fs.readFileSync(path.join(root,'web/game.js'),'utf8');
 vm.runInContext(game.slice(game.indexOf('function bearingFromScreen'),game.indexOf('const helm =')),context);
 const close = (a,b) => assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
 test('center reticle and view matrix agree at every pitch, including poles',()=>{
- for (const pitch of [-Math.PI/2,-0.8,0,0.8,Math.PI/2]) {
+ for (const pitch of [-Math.PI,-2.4,-Math.PI/2,-0.8,0,0.8,Math.PI/2,2.4,Math.PI]) {
   const yaw=1.2, eye=[1000,2500,4000];
   const aim=context.bearingFromScreen(640,360,{d:yaw,pitch});
-  close(aim.pitch,pitch);
+  close(Math.sin(aim.pitch),Math.sin(pitch));
   const f=[Math.cos(aim.d)*Math.cos(aim.pitch),Math.sin(aim.pitch),Math.sin(aim.d)*Math.cos(aim.pitch)];
   const m=context.mat4LookYaw(eye,yaw,pitch);
   const w=f.map((v,i)=>eye[i]+v*1000);
@@ -23,7 +23,7 @@ test('center reticle and view matrix agree at every pitch, including poles',()=>
  }
 });
 test('off-center reticle ray projects back to the requested pixel',()=>{
- for (const pitch of [-1.5,-0.5,0.5,1.5]) for (const [x,y] of [[100,100],[1100,600]]) {
+ for (const pitch of [-3,-2,-1.5,-0.5,0.5,1.5,2,3]) for (const [x,y] of [[100,100],[1100,600]]) {
   const yaw=0.7, aim=context.bearingFromScreen(x,y,{d:yaw,pitch});
   const f=[Math.cos(aim.d)*Math.cos(aim.pitch),Math.sin(aim.pitch),Math.sin(aim.d)*Math.cos(aim.pitch)];
   const m=context.mat4Mul(context.mat4Perspective(65*Math.PI/180,1280/720,20,120000),context.mat4LookYaw([0,0,0],yaw,pitch));
@@ -234,4 +234,17 @@ test('cockpit pointer capture repeats held input and releases on button-up, blur
  down();events.blur();assert.equal(sent.at(-1).v,0);assert.equal(captured,null);
  down();env.document.hidden=true;docEvents.visibilitychange();assert.equal(sent.at(-1).v,0);
  const n=sent.length;down();assert.equal(sent.length,n);
+});
+
+// Exercise the actual snapshot interpolation paths at the full-loop wrap.
+test('cockpit and other ships interpolate pitch through the short wrap',()=>{
+ const c=vm.createContext({performance:{now:()=>50},snapAt:0,
+  prevSnap:{you:{st:'alive',x:0,y:0,z:0,d:0,pitch:Math.PI-0.04}},
+  curSnap:{you:{st:'alive',x:0,y:0,z:0,d:0,pitch:-Math.PI+0.04}}});
+ vm.runInContext(game.slice(game.indexOf('function lerp('),game.indexOf('function interpList(')),c);
+ const end=game.indexOf('\n}',game.indexOf('function interpList('))+2;
+ vm.runInContext(game.slice(game.indexOf('function interpList('),end),c);
+ close(c.interpYou().pitch,Math.PI);
+ const ships=c.interpList([{i:1,...c.curSnap.you}],[{i:1,...c.prevSnap.you}],0.5);
+ close(ships[0].pitch,Math.PI);
 });
