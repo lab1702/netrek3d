@@ -373,7 +373,7 @@ func TestCheckOrigin(t *testing.T) {
 		}
 		return r
 	}
-	if !checkOrigin(req("http://localhost:9701", "localhost:9701")) {
+	if !checkOrigin(req("http://localhost:9702", "localhost:9702")) {
 		t.Fatal("same origin should pass")
 	}
 	if !checkOrigin(req("https://www.lab1702.com", "www.lab1702.com")) {
@@ -382,7 +382,7 @@ func TestCheckOrigin(t *testing.T) {
 	if checkOrigin(req("https://evil.example", "www.lab1702.com")) {
 		t.Fatal("cross origin must be rejected")
 	}
-	if !checkOrigin(req("", "localhost:9701")) {
+	if !checkOrigin(req("", "localhost:9702")) {
 		t.Fatal("no Origin header (non-browser client) should pass")
 	}
 	t.Setenv("NETREK3D_ORIGINS", "https://game.example, https://other.example")

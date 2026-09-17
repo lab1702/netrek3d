@@ -5,7 +5,7 @@
       "name": "netrek3d",
       "runtimeExecutable": "go",
       "runtimeArgs": ["run", "."],
-      "port": 9701
+      "port": 9702
     }
   ]
 }

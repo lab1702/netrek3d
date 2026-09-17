@@ -42,11 +42,11 @@ or with Docker:
 docker compose up --build -d
 ```
 
-Then open [localhost:9701](http://localhost:9701) in a browser with WebGL and
+Then open [localhost:9702](http://localhost:9702) in a browser with WebGL and
 WebSocket support. Choose a team and ship, then press **ENGAGE**. Up to 128
 players, 32 per team, with one active starbase per team.
 
-Change the listen address with `go run . -addr :9702`. To build a standalone
+Override the default listen address with, for example, `go run . -addr :9800`. To build a standalone
 binary, run `go build -o netrek3d .` and then `./netrek3d`; the client assets are
 embedded at build time, so rebuild after changing `web/`. `/health` returns
 HTTP 200 for container and proxy health checks.
@@ -58,7 +58,7 @@ WebSocket relative to the page URL. Caddy example:
 example.com {
     redir /netrek3d /netrek3d/ 301
     handle_path /netrek3d/* {
-        reverse_proxy localhost:9701
+        reverse_proxy localhost:9702
     }
 }
 ```

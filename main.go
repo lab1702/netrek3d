@@ -18,7 +18,7 @@ import (
 var webFS embed.FS
 
 func main() {
-	addr := flag.String("addr", ":9701", "listen address")
+	addr := flag.String("addr", ":9702", "listen address")
 	flag.Parse()
 
 	game := NewGame()

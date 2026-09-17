@@ -3,12 +3,12 @@ services:
     build: .
     container_name: netrek3d
     ports:
-      - "9701:9701"
+      - "9702:9702"
     restart: unless-stopped
     environment:
       - TZ=UTC
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9701/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9702/health"]
       interval: 30s
       timeout: 3s
       retries: 3

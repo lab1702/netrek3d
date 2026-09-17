@@ -76,7 +76,7 @@ events. Enemy cloaked players are filtered per recipient, and team chat is sent
 only to teammates. There is no distance-based server interest filtering. All
 clients share one game; bot management is available from the lobby and cockpit.
 
-`-addr` defaults to `:9701`. `NETREK3D_ORIGINS` overrides the browser origin allowlist;
+`-addr` defaults to `:9702`. `NETREK3D_ORIGINS` overrides the browser origin allowlist;
 without it, the Origin host must match the request Host. Requests without Origin
 are accepted. `NETREK3D_SHOTDIR` optionally enables the development-only
 `/debug/shot` endpoint, which writes up to 8 MiB of submitted bytes to `shot.png`

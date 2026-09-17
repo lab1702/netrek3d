@@ -21,9 +21,9 @@ COPY --from=builder /app/netrek3d .
 
 USER netrek
 
-EXPOSE 9701
+EXPOSE 9702
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:9701/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:9702/health || exit 1
 
 CMD ["./netrek3d"]
