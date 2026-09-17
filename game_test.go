@@ -503,3 +503,31 @@ func TestTurnRateSlowsWithSpeed(t *testing.T) {
 		t.Fatalf("turning should be slower at high warp: warp2=%f warp9=%f", slow, fast)
 	}
 }
+
+func TestFuelStarvationPreservesLowerSpeedLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		requested, damage int
+		locked, repair    bool
+		want              int
+	}{
+		{name: "stop", requested: 0, want: 0},
+		{name: "repair", requested: 0, repair: true, want: 0},
+		{name: "engine lock", requested: 9, locked: true, want: 1},
+		{name: "damage", requested: 9, damage: 95, want: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGame()
+			p := addPlayer(t, g, "pilot", "F", "CA").player
+			p.Speed, p.DesSpeed, p.Fuel = 4, tc.requested, 0
+			p.Damage, p.ELock, p.RepairMode = tc.damage, tc.locked, tc.repair
+			g.movePlayer(p)
+			if p.DesSpeed != tc.want {
+				t.Fatalf("desired speed = %d, want %d", p.DesSpeed, tc.want)
+			}
+			if p.Speed > 4 || p.SubSpeed > 0 {
+				t.Fatalf("starved ship accelerated: speed=%d fraction=%d", p.Speed, p.SubSpeed)
+			}
+		})
+	}
+}

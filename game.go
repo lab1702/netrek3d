@@ -759,14 +759,15 @@ func (g *Game) movePlayer(p *Player) {
 	}
 	starving := p.Fuel < s.WarpCost*p.Speed
 	if starving { // settle at a cruise speed the recharge rate can sustain
+		fuelSpeed := p.Speed
 		if s.Recharge/s.WarpCost < p.Speed {
-			p.DesSpeed = s.Recharge/s.WarpCost + 2
-			if p.DesSpeed > s.MaxSpeed {
-				p.DesSpeed = s.MaxSpeed - 1
+			fuelSpeed = s.Recharge/s.WarpCost + 2
+			if fuelSpeed > s.MaxSpeed {
+				fuelSpeed = s.MaxSpeed - 1
 			}
-		} else {
-			p.DesSpeed = p.Speed
 		}
+		// Fuel limits must preserve stopping and the damage/engine clamps.
+		p.DesSpeed = min(p.DesSpeed, fuelSpeed)
 		p.Fuel = 0
 	}
 

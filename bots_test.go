@@ -535,6 +535,22 @@ func TestBotWar(t *testing.T) {
 		initialPlanets[i] = *pl
 	}
 
+	// Start with an encounter: random homeworld spawns can spend the entire
+	// sample navigating separate altitude layers without reaching weapon range.
+	firstTeam := g.players[0].Team
+	for _, p := range g.players {
+		if p == nil {
+			continue
+		}
+		p.X, p.Y, p.Z = 45000, 50000, 0
+		if p.Team != firstTeam {
+			p.X = 47500
+		}
+		p.Speed, p.DesSpeed = 0, 0
+		p.Orbiting, p.LockPlanet = -1, -1
+		p.Bot.Cooldown = 0
+	}
+
 	torpsFired, phaserShots := 0, 0
 	for i := 0; i < 3000; i++ { // 5 minutes at 10 Hz
 		g.Tick()
@@ -582,4 +598,25 @@ func TestBotWar(t *testing.T) {
 	}
 	t.Logf("after 5 min: alive=%d kills=%.2f torp-ticks=%d phaser-events=%d touched-planets=%d",
 		alive, kills, torpsFired, phaserShots, touched)
+}
+
+func TestCloakedBotDecloaksToDefendPlanet(t *testing.T) {
+	g := NewGame()
+	g.AddBotCmd("F")
+	p := g.players[0]
+	p.Ship = shipTypes["SC"]
+	p.Fuel = p.Ship.MaxFuel
+	pl := g.planets[0]
+	p.X, p.Y, p.Z = pl.X, pl.Y, pl.Z
+	p.Cloaked = true
+	p.Bot.Cooldown = 0
+	enemy := addPlayer(t, g, "attacker", "R", "CA").player
+	enemy.X, enemy.Y, enemy.Z = pl.X+500, pl.Y, pl.Z
+	g.updateBot(p)
+	if p.Cloaked {
+		t.Fatal("defender stayed cloaked")
+	}
+	if p.NTorps == 0 && len(g.phasers) == 0 {
+		t.Fatal("defender did not fire")
+	}
 }

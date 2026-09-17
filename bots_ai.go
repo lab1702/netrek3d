@@ -1128,6 +1128,7 @@ func (g *Game) botDefendPlanet(p *Player, pl *Planet, enemy *Player, dist float6
 	b.Role = botRoleDefender
 	b.DefenseTarget = pl.N
 	p.RepairMode = false
+	p.Cloaked = false
 	g.breakOrbit(p)
 	p.Orbiting = -1
 
