@@ -29,6 +29,9 @@ is not configured as a push remote. Its MIT license and history are retained.
 
 ## Run
 
+Requires Go 1.26.5 or newer, or Docker with Compose. Run these commands from
+this repository's root (the directory containing `go.mod`).
+
 ```
 go run .
 ```
@@ -36,10 +39,17 @@ go run .
 or with Docker:
 
 ```
-docker compose up -d
+docker compose up --build -d
 ```
 
-then open http://localhost:9701 (WebGL required). Up to 128 players, 32 per team.
+Then open [localhost:9701](http://localhost:9701) in a browser with WebGL and
+WebSocket support. Choose a team and ship, then press **ENGAGE**. Up to 128
+players, 32 per team, with one active starbase per team.
+
+Change the listen address with `go run . -addr :9702`. To build a standalone
+binary, run `go build -o netrek3d .` and then `./netrek3d`; the client assets are
+embedded at build time, so rebuild after changing `web/`. `/health` returns
+HTTP 200 for container and proxy health checks.
 
 Runs standalone or behind a path-stripping reverse proxy — the client resolves its
 WebSocket relative to the page URL. Caddy example:
@@ -53,13 +63,20 @@ example.com {
 }
 ```
 
-WebSocket connections are same-origin only (Caddy preserves the Host header, so the above
-just works). If your proxy rewrites Host, set `NETREK3D_ORIGINS` to a comma-separated list
-of allowed origins (e.g. `https://example.com`), or `*` to disable the check.
+Browser WebSocket connections require the Origin host to match the request Host
+by default (Caddy preserves Host, so the above works). If your proxy rewrites
+Host, set `NETREK3D_ORIGINS` to a comma-separated list of allowed origins
+(e.g. `https://example.com`), or `*` to disable the check. Requests without an
+Origin header are accepted.
 
 **Bots:** the join screen has bot controls — `+F/+R/+K/+O` add a bot to a team, `−` removes one,
 `BALANCE` tops up the two most-populated teams to 4v4 (T-mode-ready in one click), `CLEAR` removes
-all bots. Bot AI is modeled on [lab1702/netrek-web](https://github.com/lab1702/netrek-web): threat
+all bots. **FILL** tops up each team to 31 players, leaving one slot per team.
+Join before adding bots: with no joined human connection, bots start a 10-second
+self-destruct countdown and are removed; a human joining during the countdown
+cancels it. The same controls are available in flight with `\`.
+
+Bot AI is modeled on [lab1702/netrek-web](https://github.com/lab1702/netrek-web): threat
 assessment, torpedo dodging, lead-aimed torps and spreads, target scoring, planet defense, and a
 full T-mode planet game (bomb, pick up, take). Bots count toward T-mode player counts.
 
@@ -84,8 +101,8 @@ team colors and all in-game rendering are historical and deliberately outside th
 | Input | Action |
 |---|---|
 | hold right mouse | continuously steer yaw/pitch; farther from center turns faster within ship turn limits |
-| arrow keys | steer pitch up/down and yaw left/right |
-| `h` | level pitch at current altitude |
+| arrow keys | adjust target pitch up/down or world yaw left/right in 0.2-radian steps |
+| `h` | turn toward level flight (pitch 0) |
 | left-click / `t` | fire torpedo toward pointer |
 | middle-click / `f` | fire phaser toward pointer |
 | `p` | player list: 4 team columns, sorted by kills |
@@ -101,10 +118,15 @@ team colors and all in-game rendering are historical and deliberately outside th
 | `R` | repair mode |
 | `m` | open/close interactive 3D galactic map |
 | `\` | bot management panel |
-| `Q` | self destruct (10 s fuse; any other action cancels) |
+| `Q` | arm self destruct (normally 10 s; starbase 60 s; see below) |
 | Esc | quit ship (or close bot panel) |
 
-You need kills to carry armies (2 per kill, 3 per kill in an Assault ship).
+You need kills to carry armies (2 per kill, 3 per kill in an Assault ship),
+subject to the ship's army capacity.
+
+Self destruct fires immediately if the hull is undamaged, shields are full, and
+no living enemy is within 15000 units in 3D. Otherwise it uses the fuse above.
+Another gameplay command cancels the fuse; chat does not.
 
 ## Continuous flight steering
 
@@ -112,8 +134,10 @@ Hold the right mouse button and move the pointer away from the center to steer.
 The small center ring is a neutral zone; outside it, response increases smoothly
 with distance. Near-center input uses only part of the available turn rate; edge
 input uses the maximum allowed by your ship and warp speed, capped at 90°/second.
-Pitch continues through straight up/down into full loops. Equivalent heading angles
-are kept continuous at the poles, and both angles interpolate across their wrap.
+Held steering follows cockpit right/up, including when inverted or pointing
+straight up/down. Pitch continues through the poles into full loops. Equivalent
+heading angles are kept continuous at the poles, and both angles interpolate
+across their wrap.
 
 Release the button to hold the current heading. Steering also stops when opening
 the map or chat, switching to another navigation mode, or losing window focus.
@@ -141,18 +165,32 @@ while the map is open; flight and weapon shortcuts are suppressed until it close
 
 ## Development and verification
 
-Requires Go 1.26.5 or newer. No JavaScript build or external browser libraries.
+Requires Go 1.26.5 or newer and Node.js for the client checks (CI uses Node 22).
+There is no JavaScript build step or external browser library. Run the same
+checks as [CI](.github/workflows/test.yml):
 
 ```sh
 go test -race ./...
+go vet ./...
+node --check web/game.js
+node --check web/gl.js
+node --check web/radar.js
+node --check web/galaxy.js
+node --check web/steering.js
 node --test tests/client.test.cjs
-go run . -addr :9701
 ```
 
 The spatial regression tests cover pitch-independent speed, Z wall reflections,
 vertical weapon hits, altitude isolation of area effects, inclined orbit stability,
 autopilot convergence, 3D bot intercepts, and wire serialization. Existing Netrek
-rule and WebSocket regression tests remain in place.
+rule and WebSocket regression tests remain in place. Steering tests cover
+repeated loops, cockpit-relative turns at vertical/inverted attitudes, turn
+budgets, release, and timeout. Client tests use Node with mocked canvas/DOM
+objects; they do not exercise an actual browser or GPU.
+
+For a manual smoke test, run `go run .`, join, add bots, and check held steering
+through a full pitch loop, weapon aim above/below the horizon, inclined orbit,
+radar altitude stems, and map selection/locking.
 
 Protocol version 2 adds `z` to positions and `pitch` (radians, wrapped to -π through +π)
 to ship state and course/weapon commands. Phaser effects carry `fz` and `tz`;
@@ -161,5 +199,8 @@ The `steer` command uses `v: 1` for held input, `d`/`pitch` for normalized
 horizontal/vertical axes, and `v: 0` to release at the server's current heading.
 Use this repository's client with its server; the old flat client is not supported.
 
-Design notes under `docs/superpowers/` describe the original flat-world project
-and are retained as historical reference.
+## Technical documentation
+
+- [Current 3D design](docs/design.md): coordinates, simulation, rendering, rules, and file layout.
+- [Protocol v2](docs/protocol.md): WebSocket messages, spatial fields, input, and delivery behavior.
+- [Archived netrekfp design](docs/superpowers/specs/2026-07-10-netrekfp-design.md): historical flat-world predecessor; not the current specification.

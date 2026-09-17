@@ -2,7 +2,8 @@ package main
 
 import "math/rand"
 
-// Planet layout verbatim from netrek-server ntserv/planet.c virginal[];
+// Planet names and X/Y layout from netrek-server ntserv/planet.c virginal[];
+// netrek3d adds fixed altitude layers via planetAltitude.
 // resource randomization from the INL tournament robot's pl_reset_inl()
 // (robots/inl.c), which is what governs a real tournament galaxy.
 

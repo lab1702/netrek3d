@@ -1,4 +1,5 @@
-// game.js — net, input, HUD, galactic map. Rendering primitives live in gl.js.
+// game.js — networking, input, HUD, and frame orchestration.
+// Cockpit, radar, galaxy map, and held steering live in their own modules.
 "use strict";
 
 const TEAM_NAMES = { F: "Federation", R: "Romulan", K: "Klingon", O: "Orion" };
@@ -12,12 +13,12 @@ const mapCanvas = document.getElementById("map");
 const R = new Renderer(glCanvas);
 
 let ws = null, myId = -1;
-let planets = [];              // static part from welcome; o/a updated by snaps
+let planets = [];              // static part from welcome; o/a/f updated by snaps
 let prevSnap = null, curSnap = null, snapAt = 0;
 let joined = false, mapOn = false;
 let mouse = { x: innerWidth / 2, y: innerHeight / 2 };
-let phaserFx = [];             // {fx,fy,tx,ty,t,until}
-let booms = [];                // {x,y,big,at}
+let phaserFx = [];             // {fx,fy,fz,tx,ty,tz,tm,until}
+let booms = [];                // {x,y,z,s,at}
 let selTeam = null, selShip = "CA";
 
 // ---------- join UI ----------

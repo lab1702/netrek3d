@@ -439,7 +439,7 @@ func (g *Game) wirePlanetsFull() []wirePlanetFull {
 }
 
 // broadcast builds one snapshot per joined client (players filtered for cloak).
-// ponytail: full state every tick, ~6 KB/client; delta encoding is the upgrade path.
+// Full spatial state is replaceable; one-shot effects use the reliable event queue.
 func (s *Server) broadcast() {
 	g := s.game
 	g.mu.Lock()

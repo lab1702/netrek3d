@@ -1,4 +1,9 @@
-# netrekfp — first-person 3D Netrek
+# Archived: netrekfp — first-person view of a flat Netrek galaxy
+
+> Historical predecessor design, superseded by the [current netrek3d design](../../design.md)
+> and [protocol v2 reference](../../protocol.md). The flat world, original file layout,
+> controls, army counts, and draft message examples below do not describe netrek3d.
+> For current setup and controls, see the [README](../../../README.md).
 
 2026-07-10. Autonomous-session design (user not available for Q&A); decisions below follow classic
 Vanilla netrek behavior wherever the request didn't specify.

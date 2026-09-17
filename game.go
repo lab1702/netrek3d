@@ -89,7 +89,7 @@ type Player struct {
 	Status string // "outfit", "alive", "explode", "dead"
 
 	X, Y, Z         float64
-	Dir             float64 // radians; velocity = (cos, sin)
+	Dir             float64 // yaw radians; heading(Dir, Pitch) gives the 3D direction
 	DesDir          float64
 	Pitch, DesPitch float64
 	OrbitNormal     vec3

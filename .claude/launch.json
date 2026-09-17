@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "netrekfp",
+      "name": "netrek3d",
       "runtimeExecutable": "go",
       "runtimeArgs": ["run", "."],
       "port": 9701
