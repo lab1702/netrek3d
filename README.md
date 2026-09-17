@@ -17,7 +17,7 @@ lead moving targets with a three-dimensional projectile intercept calculation.
 Classic ship classes, resources, army play, T-mode, and combat balance constants
 are inherited from the original project.
 
-The galactic map remains an X/Y tactical projection, with absolute Z labels. The
+The galactic map is a rotatable perspective view of the actual XYZ galaxy. The
 local radar is a tilted, heading-up 3D view with a 20k spherical range. Contacts
 above/below your altitude plane have vertical stems (dashed below); diamonds
 are ships and circles are planets. It stays vertically stable while pitching,
@@ -93,18 +93,36 @@ team colors and all in-game rendering are historical and deliberately outside th
 | `0`–`9`, `=` | warp speed (= is max) |
 | `s` | shields |
 | `o` | orbit (warp ≤ 2, near planet) |
-| `l` / left-click on map | lock nearest planet: autopilot handles speed and course, orbits on arrival; any manual speed/course cancels |
+| `l` | cockpit: lock planet under pointer; map: lock selected planet; autopilot handles course, speed, and orbit |
 | `b` | bomb (orbiting enemy planet) |
 | `z` / `x` | beam armies up / down |
 | `c` | cloak |
 | `d` | det enemy torps |
 | `R` | repair mode |
-| `m` | galactic X/Y map with Z labels; right-click sets a level course |
+| `m` | open/close interactive 3D galactic map |
 | `\` | bot management panel |
 | `Q` | self destruct (10 s fuse; any other action cancels) |
 | Esc | quit ship (or close bot panel) |
 
 You need kills to carry armies (2 per kill, 3 per kill in an Assault ship).
+
+## Galactic map
+
+Press `m` to open the live 3D galaxy. Drag to orbit the camera and scroll (or use
+`+`/`−`) to zoom. Click a planet or visible ship to inspect its coordinates,
+true spatial distance, and relative altitude. Planet details include armies and
+facilities. A dashed line connects your ship to the selected object.
+
+Selection alone does not change your course. Use **Lock planet** (or `l`) to
+start autopilot to the selected planet. The planet selector also supports keyboard
+navigation and finding planets hidden behind other contacts. Ships can be inspected
+but cannot be locked; the server currently supports planet autopilot only.
+
+**3D / Top / Side** change the viewing angle. **Center on ship** follows your ship;
+**Reset galaxy** returns to the default galaxy view and zoom. Grid and altitude stems
+can be toggled independently. Arrow keys rotate the map when not editing a control.
+`m` or Escape closes the map without quitting your ship. The game continues running
+while the map is open; flight and weapon shortcuts are suppressed until it closes.
 
 ## Development and verification
 

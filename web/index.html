@@ -12,8 +12,33 @@
                color: var(--fg-1); font-family: var(--font-mono); font-size: 13px;
                line-height: 1.45; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-  #overlay, #map { pointer-events: none; }
-  #map { display: none; }
+  #overlay { pointer-events: none; }
+  #map { display: none; z-index: 3; touch-action: none; cursor: grab; }
+  #galaxyUI[hidden] { display: none; }
+  #galaxyUI { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+  #galaxyUI button, #galaxyUI input, #galaxyUI select, #galaxyUI label { pointer-events: auto; }
+  .galaxy-toolbar { position: absolute; top: 14px; left: 16px; right: 16px; }
+  .galaxy-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .galaxy-heading strong { letter-spacing: .14em; color: var(--amber); }
+  .galaxy-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .galaxy-controls label { margin-left: 8px; }
+  .galaxy-details { position: absolute; right: 16px; top: 124px; width: 260px; pointer-events: auto; }
+  .galaxy-details select { width: 100%; margin-bottom: 18px; }
+  #galaxyName { font-size: 16px; color: var(--fg-1); margin: 0 0 10px; }
+  #galaxyDetails { white-space: pre-line; overflow-wrap: anywhere; color: var(--fg-2); line-height: 1.8; margin-bottom: 16px; }
+  #galaxyScale { display: block; margin-top: 18px; color: var(--fg-3); }
+  .galaxy-help { position: absolute; left: 16px; bottom: 14px; color: var(--fg-2); }
+  body.map-open .hud, body.map-open #help, body.map-open #msgs,
+  body.map-open .chatArea, body.map-open #chatBox,
+  body.map-open #botPanel, body.map-open #playerList { visibility: hidden; }
+  @media (max-width: 759px) {
+    .galaxy-details { top: auto; bottom: 12px; left: 16px; right: 16px; width: auto; }
+    .galaxy-details select { margin-bottom: 6px; }
+    #galaxyName { margin-bottom: 4px; }
+    #galaxyDetails { margin: 0 0 6px; line-height: 1.4; font-size: 11px; }
+    #galaxyScale { position: absolute; right: 0; bottom: 0; font-size: 11px; }
+    .galaxy-help { display: none; }
+  }
   .hud { position: absolute; user-select: none; pointer-events: none;
          text-shadow: 0 0 4px oklch(0 0 0 / 0.8); }
   #hudLeft  { left: 12px; bottom: 12px; }
@@ -95,7 +120,31 @@
 <body>
 <canvas id="gl"></canvas>
 <canvas id="overlay"></canvas>
-<canvas id="map"></canvas>
+<canvas id="map" aria-label="Rotatable 3D galaxy map; use the planet selector and view controls for keyboard navigation"></canvas>
+<section id="galaxyUI" hidden aria-label="Galactic map controls">
+  <div class="galaxy-toolbar">
+    <div class="galaxy-heading"><strong>GALAXY / 3D</strong><button id="galaxyClose" class="l7-btn l7-btn--outline btn-sm">Close · M / Esc</button></div>
+    <div class="galaxy-controls">
+      <button class="l7-btn l7-btn--outline btn-sm" data-map-view="3d">3D</button>
+      <button class="l7-btn l7-btn--outline btn-sm" data-map-view="top">Top</button>
+      <button class="l7-btn l7-btn--outline btn-sm" data-map-view="side">Side</button>
+      <button id="galaxyReset" class="l7-btn l7-btn--outline btn-sm">Reset galaxy</button>
+      <button id="galaxyCenter" class="l7-btn l7-btn--outline btn-sm">Center on ship</button>
+      <button id="galaxyZoomOut" class="l7-btn l7-btn--outline btn-sm" aria-label="Zoom out">−</button>
+      <button id="galaxyZoomIn" class="l7-btn l7-btn--outline btn-sm" aria-label="Zoom in">+</button>
+      <label><input id="galaxyGrid" type="checkbox" checked> Grid</label>
+      <label><input id="galaxyStems" type="checkbox"> Altitude stems</label>
+    </div>
+  </div>
+  <aside class="galaxy-details">
+    <select id="galaxySelect" class="l7-input" aria-label="Select a planet"><option value="">Select a planet…</option></select>
+    <h2 id="galaxyName">Explore the galaxy</h2>
+    <div id="galaxyDetails">Select a planet or ship to inspect its position and distance.</div>
+    <button id="galaxyLock" class="l7-btn l7-btn--solid" disabled>Lock planet</button>
+    <span id="galaxyScale"></span>
+  </aside>
+  <div class="galaxy-help">Drag: rotate · Scroll: zoom · Click: inspect · L: lock selected planet · M / Esc: close</div>
+</section>
 
 <div id="playerList" class="l7-card"></div>
 
@@ -131,6 +180,7 @@ Enter: team chat &middot; shift+Enter: all chat</div>
 
 <script src="gl.js"></script>
 <script src="radar.js"></script>
+<script src="galaxy.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

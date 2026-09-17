@@ -15,5 +15,5 @@ jobs:
           node-version: '22'
       - run: go test -race ./...
       - run: go vet ./...
-      - run: node --check web/game.js && node --check web/gl.js && node --check web/radar.js
+      - run: node --check web/game.js && node --check web/gl.js && node --check web/radar.js && node --check web/galaxy.js
       - run: node --test tests/client.test.cjs

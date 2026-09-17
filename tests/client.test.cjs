@@ -107,3 +107,70 @@ test('radar paints empty and crowded scenes at vertical pitch without invalid co
  assert.ok(operations.some(([op,arg])=>op==='setLineDash' && arg.length===2));
  assert.equal(operations.filter(([op])=>op==='save').length,operations.filter(([op])=>op==='restore').length);
 });
+
+vm.runInContext(fs.readFileSync(path.join(root,'web/galaxy.js'),'utf8'),context);
+test('galaxy top and side presets preserve true coordinates and altitude',()=>{
+ const rect={x:0,y:0,w:600,h:600};
+ const view={center:{x:50000,y:50000,z:0},az:0,el:Math.PI/2,zoom:1};
+ const center=context.galaxyProjection(view.center,view,rect);
+ close(center.x,300);close(center.y,300);
+ assert.ok(context.galaxyProjection({x:60000,y:50000,z:0},view,rect).x>300);
+ assert.ok(context.galaxyProjection({x:50000,y:60000,z:0},view,rect).y>300);
+ view.el=0;
+ const above=context.galaxyProjection({x:50000,y:50000,z:10000},view,rect);
+ const below=context.galaxyProjection({x:50000,y:50000,z:-10000},view,rect);
+ assert.ok(above.y<300 && below.y>300);close(above.x,below.x);
+ assert.equal(context.galaxyProjection({x:50000,y:300000,z:0},view,rect),null);
+});
+test('galaxy picking selects the frontmost visible contact and ignores empty space',()=>{
+ const far={x:100,y:100,radius:5,depth:200,id:1},near={x:100,y:100,radius:5,depth:100,id:2};
+ assert.equal(context.galaxyHitTest([far,near],100,100).id,2);
+ assert.equal(context.galaxyHitTest([far,near],150,150),null);
+ const visible=context.galaxyVisibleShips(observer,[{i:2,tm:'R',cl:true,st:'alive'},{i:3,tm:'F',cl:true,st:'alive'},{i:4,tm:'R',st:'dead'}]);
+ assert.deepEqual(Array.from(visible,p=>p.i),[3]);
+});
+test('map rotation cannot issue flight commands; selection requires explicit lock',()=>{
+ const elements={};
+ const element=()=>({value:'',dataset:{},handlers:{},addEventListener(k,f){this.handlers[k]=f;},focus(){},replaceChildren(){},add(){}});
+ const canvas=element();canvas.style={};canvas.setPointerCapture=()=>{};canvas.hasPointerCapture=()=>true;canvas.releasePointerCapture=()=>{};
+ const ui={querySelector:s=>elements[s]||(elements[s]=element()),querySelectorAll:()=>[]};
+ const calls=[];
+ context.document={body:{classList:{toggle(){}}}};context.Option=function(){};
+ const Galaxy=vm.runInContext('GalaxyMap',context);
+ const map=new Galaxy(canvas,ui,id=>calls.push(id),()=>{});
+ map.setOpen(true,[{n:7,name:'Altair'}]);map.planets=[{n:7,name:'Altair'}];
+ map.points=[{x:100,y:100,radius:5,depth:100,kind:'planet',id:7}];
+ const event=(x,y)=>({button:0,pointerId:1,clientX:x,clientY:y});
+ canvas.handlers.pointerdown(event(100,100));canvas.handlers.pointermove(event(150,120));canvas.handlers.pointerup(event(150,120));
+ assert.equal(map.selection,null);assert.deepEqual(calls,[]);
+ canvas.handlers.pointerdown(event(100,100));canvas.handlers.pointerup(event(100,100));
+ assert.equal(map.selection.id,7);assert.deepEqual(calls,[]);
+ map.lockSelected();assert.deepEqual(calls,[7]);
+ map.selection={kind:'ship',id:7};map.lockSelected();assert.deepEqual(calls,[7]);
+ map.zoom(1000);assert.equal(map.view.zoom,4);map.zoom(0.00001);assert.equal(map.view.zoom,0.45);
+ map.rotate(0,100);assert.equal(map.view.el,Math.PI/2);
+});
+
+test('galaxy renderer keeps planet labels, selection details, and finite geometry',()=>{
+ const nodes={},element=()=>({dataset:{},handlers:{},addEventListener(k,f){this.handlers[k]=f;},focus(){}});
+ const canvas=element();canvas.style={};
+ const ui={querySelector:s=>nodes[s]||(nodes[s]=element()),querySelectorAll:()=>[]};
+ let closed=0;const Galaxy=vm.runInContext('GalaxyMap',context);
+ const map=new Galaxy(canvas,ui,()=>{},()=>closed++);
+ const text=[];
+ const ctx=new Proxy({measureText:t=>({width:t.length*7}),fillText:t=>text.push(t)},{get:(o,k)=>k in o?o[k]:(...args)=>{
+  for(const a of args)if(typeof a==='number')assert.ok(Number.isFinite(a));
+ }});
+ const pl={n:7,name:'Altair',o:'F',a:30,f:3,x:50000,y:50000,z:12000};
+ map.selection={kind:'planet',id:7};
+ map.draw(ctx,observer,[],[pl],{F:'#ffd54f',I:'#999'},1280,720);
+ assert.ok(text.includes('Altair'),'planet labels must not collide with their own glyphs');
+ assert.equal(nodes['#galaxyName'].textContent,'Altair');
+ assert.ok(nodes['#galaxyDetails'].textContent.includes('ΔZ 9,000'));
+ assert.equal(nodes['#galaxyLock'].disabled,false);
+ map.key({key:'m',target:{tagName:'SELECT'},preventDefault(){}});assert.equal(closed,0);
+ map.key({key:'Escape',target:{tagName:'BUTTON'},preventDefault(){}});assert.equal(closed,1);
+ for(const [w,h]of[[320,640],[760,600],[1280,720]]) {
+  const r=context.galaxyViewport(w,h);assert.ok(r.w>0&&r.h>0&&r.x+r.w<=w&&r.y+r.h<=h);
+ }
+});

@@ -154,7 +154,7 @@ function connect() {
   ws.onmessage = e => handle(JSON.parse(e.data));
   ws.onclose = () => {
     myId = -1; // the disconnected socket no longer reserves a team slot
-    joined = false; joinDiv.style.display = "flex";
+    joined = false; setMapOpen(false); joinDiv.style.display = "flex";
     joinMsg.textContent = "disconnected — retrying...";
     setTimeout(connect, 2000);
   };
@@ -191,6 +191,7 @@ function handle(m) {
       if (playerListDiv.style.display === "block") renderPlayerList();
       if (m.you.st === "dead" && joined) {
         joined = false;
+        setMapOpen(false);
         joinDiv.style.display = "flex";
         joinMsg.textContent = "ship destroyed";
       } else if (m.you.st === "alive" && !joined) {
@@ -284,17 +285,7 @@ glCanvas.addEventListener("mousedown", e => {
   if (!joined || !curSnap) return;
   const you = interpYou();
   const d = bearingFromScreen(e.clientX, e.clientY, you);
-  if (mapOn) {
-    // right-click: course toward that point; left-click: lock nearest planet
-    const g = mapToGalaxy(e.clientX, e.clientY);
-    if (!g) return;
-    if (e.button === 2) {
-      send({ t: "course", d: Math.atan2(g[1] - you.y, g[0] - you.x), pitch: 0 });
-    } else if (e.button === 0) {
-      send({ t: "lock", v: nearestPlanetTo(g[0], g[1]) });
-    }
-    return;
-  }
+  if (mapOn) return;
   if (e.button === 0) send({ t: "torp", ...d });
   else if (e.button === 1) { send({ t: "phaser", ...d }); e.preventDefault(); }
   else if (e.button === 2) send({ t: "course", ...d });
@@ -302,6 +293,7 @@ glCanvas.addEventListener("mousedown", e => {
 
 addEventListener("keydown", e => {
   if (!joined) return;
+  if (mapOn) { galaxyMap.key(e); return; }
   if (document.activeElement === chatInput) return; // typing a message
   if (e.key === "Enter") { openChat(e.shiftKey ? "all" : "team"); e.preventDefault(); return; }
   if (e.key >= "0" && e.key <= "9") { send({ t: "speed", v: +e.key }); return; }
@@ -327,13 +319,8 @@ addEventListener("keydown", e => {
     case "R": send({ t: "repair" }); break;
     case "c": send({ t: "cloak" }); break;
     case "d": send({ t: "det" }); break;
-    case "l": { // lock: nearest planet to the pointer (map) or under the reticle (3D)
+    case "l": { // cockpit lock: planet under the reticle
       if (!curSnap) break;
-      if (mapOn) {
-        const g = mapToGalaxy(mouse.x, mouse.y);
-        if (g) send({ t: "lock", v: nearestPlanetTo(g[0], g[1]) });
-        break;
-      }
       const y2 = interpYou();
       let best = -1, bd = 80; // screen px
       for (const pl of planets) {
@@ -346,7 +333,7 @@ addEventListener("keydown", e => {
       if (best >= 0) send({ t: "lock", v: best });
       break;
     }
-    case "m": mapOn = !mapOn; mapCanvas.style.display = mapOn ? "block" : "none"; break;
+    case "m": setMapOpen(!mapOn); break;
     case "\\": toggleBotPanel(); break;
     case "Q": send({ t: "selfdestruct" }); break;
     case "Escape":
@@ -455,22 +442,12 @@ function fmtTime(s) {
 }
 
 // ---------- galactic map ----------
-let mapRect = null;
-function nearestPlanetTo(gx, gy) {
-  let best = 0, bd = Infinity;
-  for (const pl of planets) {
-    const d = Math.hypot(pl.x - gx, pl.y - gy);
-    if (d < bd) { bd = d; best = pl.n; }
-  }
-  return best;
-}
-
-function mapToGalaxy(sx, sy) {
-  if (!mapRect) return null;
-  const [ox, oy, sz] = mapRect;
-  const gx = (sx - ox) / sz * GWIDTH, gy = (sy - oy) / sz * GWIDTH;
-  if (gx < 0 || gy < 0 || gx > GWIDTH || gy > GWIDTH) return null;
-  return [gx, gy];
+const galaxyMap = new GalaxyMap(mapCanvas, document.getElementById("galaxyUI"),
+  id => send({ t: "lock", v: id }), () => setMapOpen(false));
+function setMapOpen(open) {
+  mapOn = open;
+  galaxyMap.setOpen(open, planets);
+  if (!open) document.activeElement?.blur();
 }
 function fit2d(c) {
   const dpr = devicePixelRatio || 1;
@@ -480,50 +457,6 @@ function fit2d(c) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, innerWidth, innerHeight);
   return ctx;
-}
-
-function drawMap(you, players) {
-  const ctx = fit2d(mapCanvas);
-  ctx.fillStyle = "rgba(0,0,0,0.88)";
-  ctx.fillRect(0, 0, innerWidth, innerHeight);
-  const sz = Math.min(innerWidth, innerHeight) - 60;
-  const ox = (innerWidth - sz) / 2, oy = (innerHeight - sz) / 2;
-  mapRect = [ox, oy, sz];
-  ctx.strokeStyle = "#37474f";
-  ctx.strokeRect(ox, oy, sz, sz);
-  ctx.beginPath(); // quadrant lines
-  ctx.moveTo(ox + sz / 2, oy); ctx.lineTo(ox + sz / 2, oy + sz);
-  ctx.moveTo(ox, oy + sz / 2); ctx.lineTo(ox + sz, oy + sz / 2);
-  ctx.strokeStyle = "#1c262b"; ctx.stroke();
-
-  ctx.font = "11px Consolas, monospace";
-  ctx.textAlign = "center";
-  for (const pl of planets) {
-    const x = ox + pl.x / GWIDTH * sz, y = oy + pl.y / GWIDTH * sz;
-    ctx.fillStyle = TEAM_CSS[pl.o] || TEAM_CSS.I;
-    ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fill();
-    if (curSnap.you.lk === pl.n) { // lock ring
-      ctx.strokeStyle = "#ffb74d";
-      ctx.beginPath(); ctx.arc(x, y, 8, 0, 7); ctx.stroke();
-    }
-    ctx.fillText(`${pl.name.split(" ")[0]} ${pl.a} Z${Math.round(pl.z/1000)}k`, x, y + 14);
-    if (pl.f & 4) { ctx.fillStyle = "#8d6e63"; ctx.fillText("agri", x, y + 25); }
-  }
-  for (const p of players) {
-    if (p.st !== "alive" || (p.cl && p.i !== myId)) continue;
-    const x = ox + p.x / GWIDTH * sz, y = oy + p.y / GWIDTH * sz;
-    ctx.strokeStyle = ctx.fillStyle = TEAM_CSS[p.tm];
-    ctx.save();
-    ctx.translate(x, y); ctx.rotate(p.d + Math.PI / 2);
-    ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4, 5); ctx.lineTo(-4, 5); ctx.closePath();
-    if (p.i === myId) { ctx.fill(); } else { ctx.stroke(); }
-    ctx.restore();
-    ctx.fillText(`${p.nm} Z${Math.round(p.z/1000)}k`, x, y - 9);
-  }
-  ctx.fillStyle = "#cfd8dc";
-  ctx.textAlign = "left";
-  ctx.fillText(curSnap.tmode.on ? `T-MODE ${fmtTime(curSnap.tmode.left)}` : "pickup",
-               ox + 6, oy + 16);
 }
 
 // ---------- overlay (labels + reticle) ----------
@@ -615,7 +548,7 @@ function frame() {
 
   if (mapOn) {
     fit2d(overlay); // hide 3D labels/reticle under the map
-    drawMap(you, players);
+    galaxyMap.draw(fit2d(mapCanvas), you, players, planets, TEAM_CSS, innerWidth, innerHeight);
   } else {
     drawOverlay(labels, you, players);
   }
