@@ -274,11 +274,9 @@ function bearingFromScreen(mx, my, you) {
   const tanF = Math.tan(65 * Math.PI / 360);
   const rx = ((mx / innerWidth) * 2 - 1) * tanF * innerWidth / innerHeight;
   const up = (1 - (my / innerHeight) * 2) * tanF;
-  const c = Math.cos(you.d), n = Math.sin(you.d);
-  const cp = Math.cos(you.pitch), sp = Math.sin(you.pitch);
-  const x = c*cp - rx*n - up*c*sp;
-  const y = n*cp + rx*c - up*n*sp;
-  const z = sp + up*cp;
+  const planet = typeof planets !== "undefined" && you.orb >= 0 ? planets.find(p=>p.n===you.orb) : null;
+  const {f,r,u}=cockpitFrame(you,planet);
+  const x=f[0]+rx*r[0]+up*u[0], y=f[2]+rx*r[2]+up*u[2], z=f[1]+rx*r[1]+up*u[1];
   return { d: Math.atan2(y, x), pitch: Math.atan2(z, Math.hypot(x, y)) };
 }
 
@@ -542,7 +540,8 @@ function frame() {
              d2: (b.x - you.x) ** 2 + (b.y - you.y) ** 2 + (b.z - you.z) ** 2 };
   }).sort((a, b) => a.d2 - b.d2);
 
-  R.begin(you.x, you.y, you.d, lights, you.z, you.pitch);
+  const orbitPlanet = you.orb >= 0 ? planets.find(p=>p.n===you.orb) : null;
+  R.begin(you.x, you.y, you.d, lights, you.z, you.pitch, cockpitFrame(you, orbitPlanet));
   const labels = [];
 
   for (const pl of planets) {

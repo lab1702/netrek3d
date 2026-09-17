@@ -248,3 +248,28 @@ test('cockpit and other ships interpolate pitch through the short wrap',()=>{
  const ships=c.interpList([{i:1,...c.curSnap.you}],[{i:1,...c.prevSnap.you}],0.5);
  close(ships[0].pitch,Math.PI);
 });
+
+test('orbit camera keeps the planet limb at 95% viewport height in any plane',()=>{
+ for(const normal of [[0,0,1],[0,1,0],[0,0.6,0.8]]) {
+  for(let i=0;i<128;i++) {
+   const a=i*Math.PI/32;
+   const radial=[Math.cos(a),normal[2]*Math.sin(a),-normal[1]*Math.sin(a)];
+   const tangent=[-Math.sin(a),normal[2]*Math.cos(a),-normal[1]*Math.cos(a)];
+   const planet={n:0,x:4000,y:6000,z:-3000};
+   const you={orb:0,x:planet.x+800*radial[0],y:planet.y+800*radial[1],z:planet.z+800*radial[2],
+    d:Math.atan2(tangent[1],tangent[0]),pitch:Math.atan2(tangent[2],Math.hypot(tangent[0],tangent[1]))};
+   const frame=context.cockpitFrame(you,planet);
+   const center=[-radial[0],-radial[2],-radial[1]];
+   const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
+   close(dot(center,frame.r),0);
+   const limbAngle=Math.atan2(dot(center,frame.u),dot(center,frame.f))+Math.asin(600/800);
+   close(0.5-Math.tan(limbAngle)/(2*Math.tan(65*Math.PI/360)),0.95);
+   close(dot(frame.f,frame.u),0);close(Math.hypot(...frame.r),1);
+   context.planets=[planet];
+   const aim=context.bearingFromScreen(640,360,you);
+   const ray=[Math.cos(aim.d)*Math.cos(aim.pitch),Math.sin(aim.pitch),Math.sin(aim.d)*Math.cos(aim.pitch)];
+   close(dot(ray,frame.f),1);
+  }
+ }
+ delete context.planets;
+});

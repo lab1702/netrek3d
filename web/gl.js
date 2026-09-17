@@ -31,12 +31,38 @@ function mat4Mul(a, b) {
   }
   return o;
 }
-function mat4LookYaw(eye, yaw, pitch = 0) {
-  const c = Math.cos(yaw), n = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-  const f = [c*cp, sp, n*cp], r = [-n, 0, c], u = [-c*sp, cp, -n*sp];
+// Camera basis in WebGL coordinates (game altitude maps to Y).
+function cockpitFrame(you, planet = null) {
+  const c=Math.cos(you.d), n=Math.sin(you.d), cp=Math.cos(you.pitch), sp=Math.sin(you.pitch);
+  let f=[c*cp,sp,n*cp], r=[-n,0,c], u=[-c*sp,cp,-n*sp];
+  if (planet) {
+    const radial=[you.x-planet.x,you.z-planet.z,you.y-planet.y];
+    const distance=Math.hypot(...radial);
+    if (distance > PLANET_RADIUS) {
+      u=radial.map(v=>v/distance);
+      const dot=f.reduce((sum,v,i)=>sum+v*u[i],0);
+      const tangent=f.map((v,i)=>v-dot*u[i]);
+      const length=Math.hypot(...tangent);
+      if(length>1e-6) {
+        f=tangent.map(v=>v/length);
+        r=[f[1]*u[2]-f[2]*u[1],f[2]*u[0]-f[0]*u[2],f[0]*u[1]-f[1]*u[0]];
+        // Put the nearest limb at 95% of viewport height: a 5% sliver.
+        const tilt=Math.PI/2-Math.asin(PLANET_RADIUS/distance)-Math.atan(0.9*Math.tan(FOV/2));
+        const ct=Math.cos(tilt),st=Math.sin(tilt),forward=f;
+        f=forward.map((v,i)=>v*ct-u[i]*st);
+        u=u.map((v,i)=>v*ct+forward[i]*st);
+      }
+    }
+  }
+  return {f,r,u};
+}
+function mat4LookFrame(eye, {f,r,u}) {
   const dot = v => v[0]*eye[0]+v[1]*eye[1]+v[2]*eye[2];
   return [r[0],u[0],-f[0],0, r[1],u[1],-f[1],0, r[2],u[2],-f[2],0,
           -dot(r),-dot(u),dot(f),1];
+}
+function mat4LookYaw(eye, yaw, pitch = 0) {
+  return mat4LookFrame(eye,cockpitFrame({d:yaw,pitch}));
 }
 function mat4Model(x, y, z, yaw, s, pitch = 0) {
   const c = Math.cos(yaw), n = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
@@ -224,14 +250,14 @@ Renderer.prototype.resize = function () {
 
 // Camera position maps game altitude Z to WebGL Y; orientation uses yaw and pitch.
 // boomLights: up to 4 explosion point lights [{x, y, z, i(ntensity), r(adius)}]
-Renderer.prototype.begin = function (cx, cy, yaw, boomLights, cz = 0, pitch = 0) {
+Renderer.prototype.begin = function (cx, cy, yaw, boomLights, cz = 0, pitch = 0, camera = null) {
   const gl = this.gl;
   this.resize();
   this.aspect = this.canvas.width / this.canvas.height;
   this.proj = mat4Perspective(FOV, this.aspect, 20, 120000);
   this.eye = [cx, cz, cy];
-  this.pv = mat4Mul(this.proj, mat4LookYaw(this.eye, yaw, pitch));
-  this.pvRot = mat4Mul(this.proj, mat4LookYaw([0, 0, 0], yaw, pitch));
+  this.pv = mat4Mul(this.proj, mat4LookFrame(this.eye, camera || cockpitFrame({d:yaw,pitch})));
+  this.pvRot = mat4Mul(this.proj, mat4LookFrame([0, 0, 0], camera || cockpitFrame({d:yaw,pitch})));
   this.pxFactor = (this.canvas.height / 2) / Math.tan(FOV / 2);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   this.points = [];   // accumulated point sprites: x,y,z, r,g,b,a, size
