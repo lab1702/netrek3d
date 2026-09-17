@@ -806,8 +806,18 @@ func (g *Game) movePlayer(p *Player) {
 	// network/render frequency. The ordinary speed-dependent turn budget below
 	// still limits every change, including diagonal yaw/pitch input.
 	if p.Steering {
-		p.DesDir = math.Remainder(p.Dir+p.SteerX*math.Pi/20, 2*math.Pi)
-		p.DesPitch = wrapPitch(p.Pitch + p.SteerY*math.Pi/20)
+		p.DesDir, p.DesPitch = p.Dir, p.Pitch
+		if strength := math.Hypot(p.SteerX, p.SteerY); strength > 0 {
+			// Match the cockpit frame even when vertical or inverted.
+			forward := heading(p.Dir, p.Pitch)
+			right := vec3{-math.Sin(p.Dir), math.Cos(p.Dir), 0}
+			up := vec3{-math.Cos(p.Dir) * math.Sin(p.Pitch), -math.Sin(p.Dir) * math.Sin(p.Pitch), math.Cos(p.Pitch)}
+			tangent := right.scale(p.SteerX).add(up.scale(p.SteerY)).scale(1 / strength)
+			angle := strength * math.Pi / 20
+			target := Player{Dir: p.Dir, Pitch: p.Pitch}
+			setHeading(&target, forward.scale(math.Cos(angle)).add(tangent.scale(math.Sin(angle))))
+			p.DesDir, p.DesPitch = target.Dir, target.Pitch
+		}
 	}
 	// Rotate along the shortest great-circle arc at the ship's turn rate.
 	if p.Speed == 0 {

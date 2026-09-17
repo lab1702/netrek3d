@@ -149,3 +149,33 @@ func TestVerticalOrbitAttitudeDoesNotFlip(t *testing.T) {
 		}
 	}
 }
+
+func TestHeldSteeringUsesCockpitAxesAtEveryPitch(t *testing.T) {
+	for _, pitch := range []float64{0, math.Pi / 2, -math.Pi / 2, math.Pi, 2, -2} {
+		for _, speed := range []int{0, 4, 9} {
+			for _, axes := range [][2]float64{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.6, 0.8}} {
+				g := NewGame()
+				p := addPlayer(t, g, "pilot", "F", "CA").player
+				p.X, p.Y, p.Z = 50000, 50000, 0
+				p.Dir, p.DesDir, p.Pitch, p.DesPitch = 0, 0, pitch, pitch
+				p.Speed, p.DesSpeed = speed, speed
+				p.SubDir = 999 // ensure even high warp has a turn quantum this tick
+				forward := heading(0, pitch)
+				right, up := vec3{Y: 1}, vec3{X: -math.Sin(pitch), Z: math.Cos(pitch)}
+				tangent := right.scale(axes[0]).add(up.scale(axes[1]))
+				g.Command(p, "steer", axes[0], 1, axes[1])
+				g.movePlayer(p)
+				got := heading(p.Dir, p.Pitch)
+				if got.dot(tangent) <= 0 {
+					t.Fatalf("wrong turn: pitch=%v speed=%d axes=%v heading=%v", pitch, speed, axes, got)
+				}
+				if math.Abs(got.dot(forward.cross(tangent))) > 1e-8 {
+					t.Fatalf("turn left cockpit input plane: pitch=%v axes=%v", pitch, axes)
+				}
+				if math.Acos(math.Min(1, forward.dot(got))) > math.Pi/20+1e-8 {
+					t.Fatal("turn exceeded steering budget")
+				}
+			}
+		}
+	}
+}
