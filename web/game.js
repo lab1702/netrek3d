@@ -417,7 +417,7 @@ function bar(label, val, max, warnHigh, color, text) {
 function updateHUD(you, players) {
   const compass = ((you.d * 180 / Math.PI + 90) % 360 + 360) % 360;
   hudLeft.innerHTML =
-    `Z ${Math.round(you.z)} &nbsp; PITCH ${Math.round(you.pitch * 180 / Math.PI)}&deg;<br>` +
+    `X ${Math.round(you.x)} &nbsp; Y ${Math.round(you.y)} &nbsp; Z ${Math.round(you.z)} &nbsp; PITCH ${Math.round(you.pitch * 180 / Math.PI)}&deg;<br>` +
     bar("WARP", you.sp, you.maxsp, false, "var(--amber)", `${you.sp}/${you.maxsp}`) +
     bar("SHLD", you.sh, you.maxsh) +
     bar("HULL", you.maxdm - you.dm, you.maxdm) +
