@@ -287,3 +287,96 @@ func TestWebSocketHugeDirectionKeepsSnapshotsAndEventsLive(t *testing.T) {
 		}
 	}
 }
+
+func TestInputBudgetSupportsFlightAndBoundsBursts(t *testing.T) {
+	now := time.Unix(0, 0)
+	budget := inputBudget{tokens: inputBurst, updated: now}
+	for range 300 {
+		now = now.Add(100 * time.Millisecond)
+		for range 3 { // held steering, throttle, and weapon input at 10 Hz
+			if !budget.allow(now) {
+				t.Fatal("normal flight input exhausted the budget")
+			}
+		}
+	}
+	now = now.Add(time.Hour)
+	for range inputBurst {
+		if !budget.allow(now) {
+			t.Fatal("idle connection did not regain its burst budget")
+		}
+	}
+	if budget.allow(now) {
+		t.Fatal("idle time allowed an unbounded burst")
+	}
+	now = now.Add(time.Second / inputRate)
+	if !budget.allow(now) || budget.allow(now) {
+		t.Fatal("budget did not refill at the configured rate")
+	}
+}
+
+func TestWebSocketInputBudgetStopsEventFlood(t *testing.T) {
+	for _, command := range []inMsg{{T: "chat", To: "all", Text: "flood"}, {T: "lock", V: 0}} {
+		t.Run(command.T, func(t *testing.T) {
+			g := NewGame()
+			s := &Server{game: g, clients: make(map[*Client]bool)}
+			httpServer := httptest.NewServer(http.HandlerFunc(s.handleWS))
+			defer httpServer.Close()
+			connect := func(name string) *websocket.Conn {
+				t.Helper()
+				conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http"), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = conn.Close() })
+				_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+				if _, _, err := conn.ReadMessage(); err != nil {
+					t.Fatal(err)
+				}
+				if err := conn.WriteJSON(inMsg{T: "join", Name: name, Team: "F", Ship: "CA"}); err != nil {
+					t.Fatal(err)
+				}
+				var reply struct{ T string }
+				if err := conn.ReadJSON(&reply); err != nil || reply.T != "joined" {
+					t.Fatalf("join failed: reply=%+v err=%v", reply, err)
+				}
+				return conn
+			}
+			flood, healthy := connect("flooder"), connect("healthy")
+			_ = flood.SetWriteDeadline(time.Now().Add(3 * time.Second))
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				for range inputBurst * 4 {
+					if flood.WriteJSON(command) != nil {
+						return // the server may close while the remaining burst is in flight
+					}
+				}
+			}()
+			_, _, err := flood.ReadMessage()
+			_ = flood.Close()
+			<-done
+			if !websocket.IsCloseError(err, websocket.ClosePolicyViolation) {
+				t.Fatalf("flooding connection was not rate limited: %v", err)
+			}
+			// The budget belongs to the sender; another connection still processes input.
+			if err := healthy.WriteJSON(inMsg{T: "chat", To: "all", Text: "still responsive"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := healthy.WriteJSON(inMsg{T: "join", Team: "F", Ship: "CA"}); err != nil {
+				t.Fatal(err)
+			}
+			var reply struct{ T string }
+			if err := healthy.ReadJSON(&reply); err != nil || reply.T != "deny" {
+				t.Fatalf("healthy connection stopped responding: reply=%+v err=%v", reply, err)
+			}
+			g.mu.Lock()
+			defer g.mu.Unlock()
+			if len(g.chats) == 0 || g.chats[len(g.chats)-1].Text != "still responsive" {
+				t.Fatal("healthy connection's chat was not admitted")
+			}
+			if len(g.chats)+len(g.msgs) >= inputBurst*4 {
+				t.Fatal("entire flood was admitted into the event batch")
+			}
+		})
+	}
+}

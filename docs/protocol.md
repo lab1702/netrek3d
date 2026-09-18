@@ -109,6 +109,11 @@ There are at most 128 WebSocket connections, including lobby connections, and
 bytes, including after decompression. Names use at most 15 printable ASCII
 characters; chat uses 120. Empty names become `guest`.
 
+Each connection has an input budget of 100 messages per second with a burst
+capacity of 200 messages. It covers all commands, including chat, lobby controls,
+and invalid messages. Exceeding it closes that connection with WebSocket code
+1008. The normal 10 Hz steering stream and concurrent weapon input fit this budget.
+
 A connection must successfully join within two minutes. The server pings every
 54 seconds, uses a 60-second pong deadline after joining, and a 10-second write
 deadline. WebSocket compression is negotiated when offered. Browser origins are

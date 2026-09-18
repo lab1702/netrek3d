@@ -183,13 +183,25 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 			return pl.Owner == TeamNone ||
 				(pl.Owner != p.Team && pl.Armies < 5 && !g.thirdSpace(pl))
 		})
+		if drop == nil {
+			// If every ship is carrying, waiting for a separate bomber can
+			// stall the whole team. Prepare a legal destination ourselves.
+			drop = g.botGroupNearestPlanet(p, func(pl *Planet) bool {
+				return pl.Owner != p.Team && pl.Owner != TeamNone &&
+					pl.Armies >= 5 && !g.thirdSpace(pl)
+			})
+		}
 		botReservePlanet(p, drop, g.tick)
 		if drop == nil {
 			g.botSafeArea(p)
 			return
 		}
 		if g.botGoOrbit(p, drop, th) {
-			botStartBeaming(p, 2)
+			if drop.Owner != TeamNone && drop.Armies >= 5 {
+				botStartBombing(p)
+			} else {
+				botStartBeaming(p, 2)
+			}
 			b.Cooldown = 20
 			return
 		}

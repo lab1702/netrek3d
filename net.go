@@ -33,11 +33,28 @@ type Client struct {
 const (
 	maxWSClients  = MaxPlayers
 	maxInputBytes = 512
+	inputRate     = 100 // messages/second; includes invalid messages and lobby commands
+	inputBurst    = 200 // tolerates normal input bursts and network batching
 	writeWait     = 10 * time.Second
 	pongWait      = 60 * time.Second
 	pingPeriod    = pongWait * 9 / 10
 	joinWait      = 2 * time.Minute
 )
+
+type inputBudget struct {
+	tokens  float64
+	updated time.Time
+}
+
+func (b *inputBudget) allow(now time.Time) bool {
+	b.tokens = math.Min(inputBurst, b.tokens+now.Sub(b.updated).Seconds()*inputRate)
+	b.updated = now
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize: 1024, WriteBufferSize: 16384,
@@ -274,6 +291,7 @@ func (c *Client) readPump() {
 	c.conn.SetReadLimit(maxInputBytes)
 	joinBy := time.Now().Add(joinWait)
 	joined := false
+	budget := inputBudget{tokens: inputBurst, updated: time.Now()}
 	_ = c.conn.SetReadDeadline(joinBy)
 	c.conn.SetPongHandler(func(string) error {
 		deadline := time.Now().Add(pongWait)
@@ -285,6 +303,14 @@ func (c *Client) readPump() {
 	for {
 		_, reader, err := c.conn.NextReader()
 		if err != nil {
+			return
+		}
+		// Bound admission before parsing or dispatch: a single small input can
+		// generate an announcement or chat event for every connected player.
+		if !budget.allow(time.Now()) {
+			_ = c.conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "input rate exceeded"),
+				time.Now().Add(writeWait))
 			return
 		}
 		// Gorilla's read limit applies to wire bytes. Bound decoded input too,

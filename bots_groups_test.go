@@ -226,3 +226,43 @@ func TestBotReleasesGroupToRefuel(t *testing.T) {
 		t.Fatal("refueling bot kept its offensive reservation")
 	}
 }
+
+func TestCarryingBotsPrepareCaptureTargets(t *testing.T) {
+	g := NewGame()
+	feds := groupTestBots(t, g, 4)
+	for range 4 {
+		if !g.addBot(TeamRom) {
+			t.Fatal("could not add opposing team")
+		}
+	}
+	g.checkTmode()
+	if !g.tmode {
+		t.Fatal("fixture must be in tournament mode")
+	}
+	for _, p := range g.players {
+		if p == nil {
+			continue
+		}
+		p.Kills, p.Armies = 1, 2
+		g.botTournament(p, nil, maxSearch, combatThreat{closestTorp: maxSearch, closestEnemy: maxSearch})
+		if p.Bot.PlanetTarget < 0 {
+			t.Fatal("carrier abandoned offense when every destination needed bombing")
+		}
+		pl := g.planets[p.Bot.PlanetTarget]
+		if pl.Owner == p.Team || pl.Owner == TeamNone || pl.Armies < 5 || g.thirdSpace(pl) {
+			t.Fatalf("carrier selected an invalid bombing destination: %+v", pl)
+		}
+	}
+	p := feds[0]
+	pl := g.planets[p.Bot.PlanetTarget]
+	p.X, p.Y, p.Z, p.Orbiting = pl.X, pl.Y, pl.Z, pl.N
+	g.botTournament(p, nil, maxSearch, combatThreat{})
+	if !p.Bombing || p.Beaming != 0 || p.ShieldsUp {
+		t.Fatal("carrier did not start bombing on arrival")
+	}
+	pl.Armies = 4
+	g.botTournament(p, nil, maxSearch, combatThreat{})
+	if p.Bombing || p.Beaming != 2 || p.ShieldsUp {
+		t.Fatal("carrier did not switch from bombing to beaming down")
+	}
+}
