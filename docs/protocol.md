@@ -62,7 +62,9 @@ are excluded. Remote player and torpedo coordinates are serialized as integers;
 | `sd` | Armed self-destruct countdown; 0 when disarmed |
 
 Torpedoes are `{i,x,y,z,tm}`. Phaser effects are `{fx,fy,fz,tx,ty,tz,tm}` with
-spatial start/end points. Explosions are `{x,y,z,s}`, where `s` is visual scale.
+spatial start/end points. Explosions are `{x,y,z,s,tm?}`, where `s` is visual scale.
+Ship explosions include `tm`, the ship's team at death, for galactic map colors;
+torpedo explosions omit it.
 Chat events are `{fm,tm,to,tx}`: sender name/team, channel, text. `msgs` contains
 server message strings. Team chat is filtered server-side. Arrays may be null
 when empty, so clients should treat null as no entries.

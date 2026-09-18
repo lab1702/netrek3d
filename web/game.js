@@ -18,7 +18,7 @@ let prevSnap = null, curSnap = null, snapAt = 0;
 let joined = false, mapOn = false;
 let mouse = { x: innerWidth / 2, y: innerHeight / 2 };
 let phaserFx = [];             // {fx,fy,fz,tx,ty,tz,tm,until}
-let booms = [];                // {x,y,z,s,at}
+let booms = [];                // {x,y,z,s,tm?,at}
 let selTeam = null, selShip = "CA";
 
 // ---------- join UI ----------

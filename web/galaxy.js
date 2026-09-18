@@ -173,7 +173,8 @@ class GalaxyMap {
       if(b.s<0.75 || age<0 || age>=1)continue;
       const p=project(b);if(!p)continue;
       const radius=4+age*10;
-      ctx.globalAlpha=1-age;ctx.strokeStyle='#ffb74d';ctx.lineWidth=1.5;
+      const color=colors[b.tm]||colors.I;
+      ctx.globalAlpha=1-age;ctx.strokeStyle=color;ctx.lineWidth=1.5;
       ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.stroke();
       ctx.beginPath();
       for(let i=0;i<8;i++) {
@@ -182,7 +183,7 @@ class GalaxyMap {
         ctx.lineTo(p.x+dx*(radius+5),p.y+dy*(radius+5));
       }
       ctx.stroke();
-      ctx.globalAlpha=(1-age)*(1-age);ctx.fillStyle='#fff3d6';
+      ctx.globalAlpha=(1-age)*(1-age);ctx.fillStyle=color;
       ctx.beginPath();ctx.arc(p.x,p.y,2,0,Math.PI*2);ctx.fill();
     }
     // Label priority protects the selected target and your ship from crowded fields.

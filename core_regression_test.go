@@ -349,6 +349,9 @@ func TestSelfDestructQuitKeepsTeamSafeSplash(t *testing.T) {
 			for range 3 {
 				g.Tick()
 			}
+			if len(g.booms) != 1 || g.booms[0].Tm != team {
+				t.Fatalf("quit explosion lost its original team: %+v", g.booms)
+			}
 			if mate.Shield != mate.Ship.MaxShield || mate.Damage != 0 {
 				t.Fatalf("teammate took quit splash: shield=%d damage=%d", mate.Shield, mate.Damage)
 			}

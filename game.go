@@ -62,10 +62,11 @@ type PhaserFx struct {
 }
 
 type Boom struct {
-	X float64 `json:"x"`
-	Y float64 `json:"y"`
-	Z float64 `json:"z"`
-	S float64 `json:"s"` // visual scale: 0.35 torp, ships blowup-base/100
+	X  float64 `json:"x"`
+	Y  float64 `json:"y"`
+	Z  float64 `json:"z"`
+	S  float64 `json:"s"`            // visual scale: 0.35 torp, ships blowup-base/100
+	Tm string  `json:"tm,omitempty"` // ship's team at death; absent for torpedoes
 }
 
 type Chat struct {
@@ -1005,7 +1006,7 @@ func (g *Game) freeTorp(t *Torp) {
 
 func (g *Game) explodeTorp(t *Torp) {
 	g.freeTorp(t)
-	g.booms = append(g.booms, Boom{t.X, t.Y, t.Z, 0.35})
+	g.booms = append(g.booms, Boom{X: t.X, Y: t.Y, Z: t.Z, S: 0.35})
 	detterTeam := TeamNone
 	if t.detter != nil {
 		detterTeam = t.detter.Team
@@ -1071,7 +1072,7 @@ func (g *Game) blowup(v *Player) {
 		base = 200
 	}
 	// fireball scales with the same per-class blast strength as the damage
-	g.booms = append(g.booms, Boom{v.X, v.Y, v.Z, float64(base) / 100})
+	g.booms = append(g.booms, Boom{X: v.X, Y: v.Y, Z: v.Z, S: float64(base) / 100, Tm: teamLetter(v.ExplodeTeam)})
 	for _, p := range g.players {
 		if p == nil || p == v || p.Status != "alive" {
 			continue

@@ -151,7 +151,7 @@ Press `m` to open the live 3D galaxy. Drag to orbit the camera and scroll (or us
 `+`/`−`) to zoom. Click a planet or visible ship to inspect its coordinates,
 true spatial distance, and relative altitude. Planet details include armies and
 facilities. A dashed line connects your ship to the selected object.
-Ship explosions briefly appear as small amber bursts with expanding, fading rings.
+Ship explosions briefly appear as small bursts with expanding, fading rings in the ship's team color.
 
 Selection alone does not change your course. Use **Lock planet** (or `l`) to
 start autopilot to the selected planet. The planet selector also supports keyboard
