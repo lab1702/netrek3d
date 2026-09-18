@@ -152,7 +152,7 @@ class GalaxyMap {
       this.rotate(e.key==='ArrowLeft'?-0.1:e.key==='ArrowRight'?0.1:0,e.key==='ArrowUp'?-0.1:e.key==='ArrowDown'?0.1:0);
     }
   }
-  draw(ctx, you, players, planets, colors, width, height, booms = [], now, lights = []) {
+  draw(ctx, you, players, planets, colors, width, height, booms = [], now, lights = [], torps = [], phasers = []) {
     if (this.active && this.autoRotate && Number.isFinite(now)) {
       // Six degrees per second, driven by the existing frame loop. Cap gaps
       // so returning from a background tab cannot jump the camera forward.
@@ -210,6 +210,29 @@ class GalaxyMap {
         ctx.beginPath();ctx.arc(p.x,p.y,p.radius+5,0,Math.PI*2);ctx.stroke();
       }
     }
+    // Keep weapons smaller than ship/planet icons, with a pixel floor so they
+    // remain visible across the galaxy. Positions and beam lengths use true XYZ.
+    ctx.lineCap='round';
+    for(const ph of phasers) {
+      const alpha=Math.min(1,(ph.until-now)/300);
+      if(!(alpha>0))continue;
+      const from=project({x:ph.fx,y:ph.fy,z:ph.fz});
+      const to=project({x:ph.tx,y:ph.ty,z:ph.tz});
+      if(!from || !to)continue;
+      ctx.globalAlpha=alpha;ctx.strokeStyle=colors[ph.tm]||colors.I;
+      ctx.lineWidth=Math.max(1,Math.min(2,80*(from.scale+to.scale)/2));
+      ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();
+    }
+    for(const tp of torps) {
+      const p=project(tp);if(!p)continue;
+      const radius=Math.max(1,Math.min(2.5,200*p.scale));
+      ctx.fillStyle=colors[tp.tm]||colors.I;
+      ctx.globalAlpha=0.2;
+      ctx.beginPath();ctx.arc(p.x,p.y,radius*2,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+      ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=1;ctx.lineCap='butt';
     // Ship blasts (scale 0.75–2; torpedoes are 0.35) get a brief map-sized burst.
     // Project the actual blast position each frame so it stays anchored while rotating.
     for(const b of booms) {

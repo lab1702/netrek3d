@@ -158,6 +158,9 @@ facilities. A dashed line connects your ship to the selected object.
 Ships use miniature versions of the cockpit's 3D model, showing their heading
 and pitch with the same lighting and reflective highlights.
 Planets use the cockpit's shaded sphere model and lighting at a compact map size.
+Live torpedoes appear as small team-colored dots and phasers as fading beams, with
+true 3D positions and beam lengths. Weapon markers scale with zoom and depth while
+staying small and readable.
 Ship explosions briefly appear as small bursts with expanding, fading rings in the ship's team color.
 
 Selection alone does not change your course. Use **Lock planet** (or `l`) to
