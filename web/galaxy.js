@@ -119,7 +119,7 @@ class GalaxyMap {
       this.rotate(e.key==='ArrowLeft'?-0.1:e.key==='ArrowRight'?0.1:0,e.key==='ArrowUp'?-0.1:e.key==='ArrowDown'?0.1:0);
     }
   }
-  draw(ctx, you, players, planets, colors, width, height) {
+  draw(ctx, you, players, planets, colors, width, height, booms = [], now) {
     this.planets=planets;
     const rect=galaxyViewport(width,height);
     if(this.follow) this.view.center={x:you.x,y:you.y,z:you.z};
@@ -165,6 +165,25 @@ class GalaxyMap {
         ctx.strokeStyle=chosen?'#eceff1':p.kind==='ship'?'#eceff1':'#ffb74d';
         ctx.beginPath();ctx.arc(p.x,p.y,p.radius+5,0,Math.PI*2);ctx.stroke();
       }
+    }
+    // Ship blasts (scale 0.75–2; torpedoes are 0.35) get a brief map-sized burst.
+    // Project the actual blast position each frame so it stays anchored while rotating.
+    for(const b of booms) {
+      const age=(now-b.at)/700;
+      if(b.s<0.75 || age<0 || age>=1)continue;
+      const p=project(b);if(!p)continue;
+      const radius=4+age*10;
+      ctx.globalAlpha=1-age;ctx.strokeStyle='#ffb74d';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();
+      for(let i=0;i<8;i++) {
+        const angle=i*Math.PI/4,dx=Math.cos(angle),dy=Math.sin(angle);
+        ctx.moveTo(p.x+dx*(radius+2),p.y+dy*(radius+2));
+        ctx.lineTo(p.x+dx*(radius+5),p.y+dy*(radius+5));
+      }
+      ctx.stroke();
+      ctx.globalAlpha=(1-age)*(1-age);ctx.fillStyle='#fff3d6';
+      ctx.beginPath();ctx.arc(p.x,p.y,2,0,Math.PI*2);ctx.fill();
     }
     // Label priority protects the selected target and your ship from crowded fields.
     ctx.globalAlpha=1;ctx.font='12px Consolas, monospace';ctx.textAlign='left';ctx.textBaseline='top';
