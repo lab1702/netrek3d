@@ -43,7 +43,7 @@ class GalaxyMap {
     this.canvas = canvas; this.ui = ui; this.onLock = onLock; this.onClose = onClose;
     this.view = { center: {x:50000,y:50000,z:0}, az:-0.55, el:0.55, zoom:1 };
     this.selection = null; this.hover = null; this.points = []; this.active = false;
-    this.grid = true; this.stems = false; this.follow = false; this.drag = null;
+    this.grid = true; this.stems = true; this.follow = false; this.drag = null;
     this.iconRenderer = null;
     this.autoRotate = false; this.autoRotateTime = null;
     this.autoRotateButton = ui.querySelector('#galaxyAutoRotate');
