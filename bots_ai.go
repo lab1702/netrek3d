@@ -484,9 +484,11 @@ func (g *Game) botManeuver(p, target *Player, dist float64, interceptDir float64
 	if dist < 3000 {
 		if myTurn > theirTurn {
 			dir = math.Atan2(target.Y-p.Y, target.X-p.X) + math.Pi/2 // circle-strafe
+			p.DesPitch = 0                                           // this horizontal tangent is perpendicular even to an elevated target
 			speed = p.Ship.MaxSpeed * 7 / 10
 		} else if speedAdv > 0 {
 			dir = math.Atan2(p.Y-target.Y, p.X-target.X) // boom and zoom
+			p.DesPitch = -elevation(p.X, p.Y, p.Z, target.X, target.Y, target.Z)
 			speed = p.Ship.MaxSpeed
 		}
 	} else if dist > 6000 && speedAdv < 0 && target.Speed > target.Ship.MaxSpeed/2 {
@@ -675,8 +677,8 @@ func (g *Game) botThreats(p *Player) combatThreat {
 		if d < 5000 {
 			th.nearbyFoes++
 			th.threatLevel++
-			facing := math.Abs(math.Remainder(e.Dir-math.Atan2(p.Y-e.Y, p.X-e.X), 2*math.Pi))
-			if d < 2000 && facing < math.Pi/6 {
+			facing := heading(e.Dir, e.Pitch).dot(vec3{p.X - e.X, p.Y - e.Y, p.Z - e.Z})
+			if d < 2000 && facing > d*math.Cos(math.Pi/6) {
 				th.evade = true
 				th.threatLevel += 2
 			}
@@ -716,8 +718,8 @@ func (g *Game) botTorpThreatening(p *Player, t *Torp) bool {
 			return true
 		}
 	}
-	heading := math.Abs(math.Remainder(math.Atan2(p.Y-t.Y, p.X-t.X)-t.Dir, 2*math.Pi))
-	return (heading < math.Pi/4 && d < 4000) || d < 1500
+	facing := heading(t.Dir, t.Pitch).dot(vec3{p.X - t.X, p.Y - t.Y, p.Z - t.Z})
+	return (facing > d*math.Cos(math.Pi/4) && d < 4000) || d < 1500
 }
 
 func (g *Game) botShields(p *Player, th combatThreat) {
@@ -921,8 +923,14 @@ func (g *Game) botGoOrbit(p *Player, pl *Planet, th combatThreat) bool {
 		return p.Orbiting == pl.N
 	}
 	p.DesPitch = elevation(p.X, p.Y, p.Z, pl.X, pl.Y, pl.Z)
+	want := math.Atan2(pl.Y-p.Y, pl.X-p.X)
 	speed := g.botGroupCruiseSpeed(p, pl, g.botApproachSpeed(p, d))
-	g.botNavigate(p, math.Atan2(pl.Y-p.Y, pl.X-p.X), speed, th)
+	// Braking distance alone cannot prevent a fast ship circling its target.
+	// Use the player autopilot's turn-radius limit until aligned for arrival.
+	if heading(p.Dir, p.Pitch).dot(heading(want, p.DesPitch)) < math.Cos(0.3) {
+		speed = min(speed, maneuverSpeed(p.Ship, d))
+	}
+	g.botNavigate(p, want, speed, th)
 	return false
 }
 
@@ -1078,7 +1086,7 @@ func (g *Game) threatenedPlanet(p *Player) (*Planet, *Player, float64) {
 			case d < 5000:
 				s = (5000 - d) * 0.1
 			case e.Speed > 1 && d < 12000 &&
-				math.Abs(math.Remainder(e.Dir-math.Atan2(pl.Y-e.Y, pl.X-e.X), 2*math.Pi)) < math.Pi/4:
+				heading(e.Dir, e.Pitch).dot(vec3{pl.X - e.X, pl.Y - e.Y, pl.Z - e.Z}) > d*math.Cos(math.Pi/4):
 				s = (12000 - d) * 0.05
 			default:
 				continue
