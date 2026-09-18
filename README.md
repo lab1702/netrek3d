@@ -155,6 +155,8 @@ Press `m` to open the live 3D galaxy. Drag to orbit the camera and scroll (or us
 `+`/`−`) to zoom. Click a planet or visible ship to inspect its coordinates,
 true spatial distance, and relative altitude. Planet details include armies and
 facilities. A dashed line connects your ship to the selected object.
+Ships use miniature versions of the cockpit's 3D model, showing their heading
+and pitch with the same lighting and reflective highlights.
 Ship explosions briefly appear as small bursts with expanding, fading rings in the ship's team color.
 
 Selection alone does not change your course. Use **Lock planet** (or `l`) to

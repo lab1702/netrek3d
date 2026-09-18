@@ -14,6 +14,7 @@ const PLANET_FADE = 18000, PLANET_MAX = 25000;
 const SHIP_FADE = 10000, SHIP_MAX = 20000; // matches the minimap radar range
 const BOOM_MAX = 30000; // distant battle flashes, but not cross-galaxy
 const SHIP_SCALE = 140;
+const SHIP_SPECULAR = 0.6;
 // Keep fragment lighting vectors and their squared lengths in mediump range.
 const LIGHT_SCALE = 1 / 2048;
 
@@ -132,6 +133,18 @@ function makeProgram(gl, vsSrc, fsSrc) {
   return p;
 }
 
+function meshLocations(gl, program) {
+  const loc = {
+    aPos: gl.getAttribLocation(program, 'aPos'),
+    aNorm: gl.getAttribLocation(program, 'aNorm'),
+  };
+  for (const name of ['uPV','uModel','uColor','uLight','uEmissive','uEye','uSpec'])
+    loc[name] = gl.getUniformLocation(program, name);
+  loc.uBoomPos = gl.getUniformLocation(program, 'uBoomPos[0]');
+  loc.uBoomCol = gl.getUniformLocation(program, 'uBoomCol[0]');
+  return loc;
+}
+
 // ---------- geometry ----------
 function makeSphere(lon, lat) {
   const verts = [], idx = [];
@@ -179,18 +192,7 @@ function Renderer(canvas) {
   this.pointProg = makeProgram(gl, POINT_VS, POINT_FS);
   this.lineProg = makeProgram(gl, LINE_VS, LINE_FS);
   this.loc = {
-    mesh: { aPos: gl.getAttribLocation(this.meshProg, "aPos"),
-            aNorm: gl.getAttribLocation(this.meshProg, "aNorm"),
-            uPV: gl.getUniformLocation(this.meshProg, "uPV"),
-            uModel: gl.getUniformLocation(this.meshProg, "uModel"),
-            uColor: gl.getUniformLocation(this.meshProg, "uColor"),
-            uLight: gl.getUniformLocation(this.meshProg, "uLight"),
-            uEmissive: gl.getUniformLocation(this.meshProg, "uEmissive"),
-            uEye: gl.getUniformLocation(this.meshProg, "uEye"),
-            uSpec: gl.getUniformLocation(this.meshProg, "uSpec"),
-            // uniform arrays must be looked up via their first element
-            uBoomPos: gl.getUniformLocation(this.meshProg, "uBoomPos[0]"),
-            uBoomCol: gl.getUniformLocation(this.meshProg, "uBoomCol[0]") },
+    mesh: meshLocations(gl, this.meshProg),
     point: { aPos: gl.getAttribLocation(this.pointProg, "aPos"),
              aColor: gl.getAttribLocation(this.pointProg, "aColor"),
              aSize: gl.getAttribLocation(this.pointProg, "aSize"),
@@ -263,22 +265,26 @@ Renderer.prototype.begin = function (cx, cy, yaw, boomLights, cz = 0, pitch = 0,
   this.points = [];   // accumulated point sprites: x,y,z, r,g,b,a, size
   this.lines = [];    // accumulated lines: x,y,z, r,g,b,a per vertex
 
+  this.setLighting(this.eye, boomLights);
+  this.drawStars();
+};
+
+Renderer.prototype.setLighting = function (eye, boomLights) {
+  const gl = this.gl;
   // Lighting uses scaled, camera-relative coordinates in the fragment shader.
   // Upload explosion lights once per frame (unused slots have radius 0).
   const pos = new Float32Array(12), col = new Float32Array(16);
   (boomLights || []).slice(0, 4).forEach((b, i) => {
-    pos[i * 3] = (b.x - cx) * LIGHT_SCALE;
-    pos[i * 3 + 1] = (b.z - cz) * LIGHT_SCALE;
-    pos[i * 3 + 2] = (b.y - cy) * LIGHT_SCALE;
+    pos[i * 3] = (b.x - eye[0]) * LIGHT_SCALE;
+    pos[i * 3 + 1] = (b.z - eye[1]) * LIGHT_SCALE;
+    pos[i * 3 + 2] = (b.y - eye[2]) * LIGHT_SCALE;
     col[i * 4] = 1.0 * b.i; col[i * 4 + 1] = 0.6 * b.i; col[i * 4 + 2] = 0.3 * b.i;
     col[i * 4 + 3] = b.r * LIGHT_SCALE;
   });
   gl.useProgram(this.meshProg);
   gl.uniform3fv(this.loc.mesh.uBoomPos, pos);
   gl.uniform4fv(this.loc.mesh.uBoomCol, col);
-  gl.uniform3fv(this.loc.mesh.uEye, this.eye);
-
-  this.drawStars();
+  gl.uniform3fv(this.loc.mesh.uEye, eye);
 };
 
 // world -> screen px; null if behind camera
@@ -361,7 +367,7 @@ Renderer.prototype.drawShip = function (px, py, yaw, team, dist, dim, pz = 0, pi
   } else {
     this.drawMesh(this.shipBuf, this.shipCount, false,
                   mat4Model(px, pz, py, yaw, SHIP_SCALE, pitch),
-                  [color[0], color[1], color[2], alpha], 0, 0.6);
+                  [color[0], color[1], color[2], alpha], 0, SHIP_SPECULAR);
   }
   return alpha;
 };
@@ -424,3 +430,66 @@ Renderer.prototype.finish = function () {
     gl.depthMask(true);
   }
 };
+
+// Small map sprites use the cockpit mesh and shader, rendered into separate
+// transparent atlas tiles. The 2D map can then interleave ships and planets in
+// depth order, with its labels and selection rings still on top.
+const SHIP_ICON_SIZE = 32;
+const SHIP_ICON_SCALE = 5; // the 2.6-unit hull is about 13 CSS pixels long
+const SHIP_ICON_WORLD_SCALE = 1 / 16; // keep distant map lighting in mediump range
+
+function shipIconProjection(point, rect) {
+  const focal = Math.min(rect.w, rect.h) * 1.25;
+  const projection = mat4Perspective(2*Math.atan(SHIP_ICON_SIZE/(2*focal)), 1,
+    2000*SHIP_ICON_WORLD_SCALE, 1000000*SHIP_ICON_WORLD_SCALE);
+  // Crop the map's perspective around this contact, preserving its view angle.
+  projection[8] = 2*(point.x-rect.x-rect.w/2)/SHIP_ICON_SIZE;
+  projection[9] = -2*(point.y-rect.y-rect.h/2)/SHIP_ICON_SIZE;
+  return projection;
+}
+
+class ShipIconRenderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    const gl = this.gl = canvas.getContext('webgl', {alpha:true, antialias:true});
+    if (!gl) throw new Error('WebGL unavailable for map ships');
+    this.meshProg = makeProgram(gl, MESH_VS, MESH_FS);
+    this.loc = {mesh:meshLocations(gl, this.meshProg)};
+    const ship = makeShipMesh();
+    this.shipBuf = gl.createBuffer(); this.shipCount = ship.count;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.shipBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, ship.verts, gl.STATIC_DRAW);
+    gl.enable(gl.DEPTH_TEST);
+    gl.clearColor(0, 0, 0, 0);
+  }
+  render(points, camera, rect, lights, pixelRatio) {
+    const gl = this.gl, scale = SHIP_ICON_WORLD_SCALE;
+    const tile = Math.ceil(SHIP_ICON_SIZE * pixelRatio), columns = 16;
+    const height = Math.ceil(points.length/columns)*tile;
+    if (this.canvas.width !== columns*tile || this.canvas.height < height) {
+      this.canvas.width = columns*tile; this.canvas.height = height;
+    }
+    gl.disable(gl.SCISSOR_TEST);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.SCISSOR_TEST);
+    const eye = camera.eye.map(v=>v*scale);
+    const view = mat4LookFrame(eye, camera.frame);
+    Renderer.prototype.setLighting.call(this, eye, lights.map(b=>({
+      ...b,x:b.x*scale,y:b.y*scale,z:b.z*scale,r:b.r*scale,
+    })));
+    points.forEach((point, i) => {
+      const x = i%columns*tile, y = Math.floor(i/columns)*tile;
+      gl.viewport(x,y,tile,tile); gl.scissor(x,y,tile,tile);
+      this.pv = mat4Mul(shipIconProjection(point, rect), view);
+      const p = point.object, color = TEAM_COLORS[p.tm] || TEAM_COLORS.I;
+      Renderer.prototype.drawMesh.call(this, this.shipBuf, this.shipCount, false,
+        mat4Model(p.x*scale,p.z*scale,p.y*scale,p.d,SHIP_ICON_SCALE/point.scale*scale,p.pitch),
+        [...color,1],0,SHIP_SPECULAR);
+      point.shipIcon = {x,y:this.canvas.height-y-tile,tile};
+    });
+  }
+  draw(ctx, point) {
+    const {x,y,tile} = point.shipIcon, size = SHIP_ICON_SIZE;
+    ctx.drawImage(this.canvas,x,y,tile,tile,point.x-size/2,point.y-size/2,size,size);
+  }
+}

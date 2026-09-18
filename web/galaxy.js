@@ -28,12 +28,23 @@ function galaxyVisibleShips(you, players) {
   return players.filter(p => p.st === "alive" && (!p.cl || p.tm === you.tm));
 }
 
+// The same camera as galaxyProjection, expressed in WebGL's (X,Z,Y) axes.
+function galaxyShipCamera(view) {
+  const c=Math.cos(view.az), s=Math.sin(view.az), ce=Math.cos(view.el), se=Math.sin(view.el);
+  const distance=220000/view.zoom;
+  return {
+    eye:[view.center.x-s*ce*distance,view.center.z+se*distance,view.center.y+c*ce*distance],
+    frame:{r:[c,0,s],u:[s*se,ce,-c*se],f:[s*ce,-se,-c*ce]},
+  };
+}
+
 class GalaxyMap {
   constructor(canvas, ui, onLock, onClose) {
     this.canvas = canvas; this.ui = ui; this.onLock = onLock; this.onClose = onClose;
     this.view = { center: {x:50000,y:50000,z:0}, az:-0.55, el:0.55, zoom:1 };
     this.selection = null; this.hover = null; this.points = []; this.active = false;
     this.grid = true; this.stems = false; this.follow = false; this.drag = null;
+    this.shipRenderer = null;
     this.autoRotate = false; this.autoRotateTime = null;
     this.autoRotateButton = ui.querySelector('#galaxyAutoRotate');
     this.autoRotateButton.onclick = () => this.setAutoRotate(!this.autoRotate);
@@ -141,7 +152,7 @@ class GalaxyMap {
       this.rotate(e.key==='ArrowLeft'?-0.1:e.key==='ArrowRight'?0.1:0,e.key==='ArrowUp'?-0.1:e.key==='ArrowDown'?0.1:0);
     }
   }
-  draw(ctx, you, players, planets, colors, width, height, booms = [], now) {
+  draw(ctx, you, players, planets, colors, width, height, booms = [], now, lights = []) {
     if (this.active && this.autoRotate && Number.isFinite(now)) {
       // Six degrees per second, driven by the existing frame loop. Cap gaps
       // so returning from a background tab cannot jump the camera forward.
@@ -181,15 +192,20 @@ class GalaxyMap {
     if(this.stems)for(const p of planets)line({...p,z:0},p,'#41525a',p.z<0?[3,4]:[]);
     if(selected)line(you,selected.object,'#dce7ed',[5,4]);
     const points=entries.map(c=>{
-      const p=project(c.object);return p?{...c,...p,radius:c.kind==='planet'?Math.max(4,Math.min(9,1200*p.scale)):4}:null;
+      const p=project(c.object);return p?{...c,...p,radius:c.kind==='planet'?Math.max(4,Math.min(9,1200*p.scale)):8}:null;
     }).filter(p=>p && p.x>=rect.x+10 && p.x<=rect.x+rect.w-10 && p.y>=rect.y+10 && p.y<=rect.y+rect.h-10)
       .sort((a,b)=>b.depth-a.depth);
     this.points=points;
+    const shipPoints=points.filter(p=>p.kind==='ship');
+    if(shipPoints.length) {
+      if(!this.shipRenderer) this.shipRenderer=new ShipIconRenderer(document.createElement('canvas'));
+      this.shipRenderer.render(shipPoints,galaxyShipCamera(this.view),rect,lights,window.devicePixelRatio||1);
+    }
     for(const p of points) {
       ctx.globalAlpha=p.object.cl?0.4:1;ctx.fillStyle=colors[p.team]||colors.I;
       ctx.strokeStyle=ctx.fillStyle;ctx.lineWidth=1.5;ctx.beginPath();
       if(p.kind==='planet') {ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);ctx.fill();}
-      else {ctx.moveTo(p.x,p.y-5);ctx.lineTo(p.x+4,p.y);ctx.lineTo(p.x,p.y+5);ctx.lineTo(p.x-4,p.y);ctx.closePath();ctx.fill();}
+      else this.shipRenderer.draw(ctx,p);
       const chosen=p.kind===this.selection?.kind && p.id===this.selection?.id;
       if(chosen || (p.kind==='planet' && p.id===you.lk) || (p.kind==='ship' && p.id===you.i)) {
         ctx.strokeStyle=chosen?'#eceff1':p.kind==='ship'?'#eceff1':'#ffb74d';

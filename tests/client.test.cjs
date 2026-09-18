@@ -129,6 +129,40 @@ test('galaxy picking selects the frontmost visible contact and ignores empty spa
  const visible=context.galaxyVisibleShips(observer,[{i:2,tm:'R',cl:true,st:'alive'},{i:3,tm:'F',cl:true,st:'alive'},{i:4,tm:'R',st:'dead'}]);
  assert.deepEqual(Array.from(visible,p=>p.i),[3]);
 });
+
+test('map ship meshes keep their heading, pitch and screen size through camera rotation and zoom',()=>{
+ const rect={x:16,y:105,w:970,h:575};
+ const vertex=(m,v)=>[0,1,2,3].map(r=>m[r]*v[0]+m[r+4]*v[1]+m[r+8]*v[2]+m[r+12]);
+ const {size,scale,worldScale}=vm.runInContext('({size:SHIP_ICON_SIZE,scale:SHIP_ICON_SCALE,worldScale:SHIP_ICON_WORLD_SCALE})',context);
+ for(const az of [-0.55,1.2]) for(const el of [0,0.55,Math.PI/2]) for(const zoom of [0.45,1,4]) {
+  const view={center:{x:50000,y:50000,z:0},az,el,zoom};
+  const camera=context.galaxyShipCamera(view);
+  const look=context.mat4LookFrame(camera.eye.map(v=>v*worldScale),camera.frame);
+  for(const d of [0,Math.PI/2,Math.PI]) for(const pitch of [-Math.PI/2,0,0.9]) {
+   const ship={x:51000,y:52000,z:4000,d,pitch};
+   const point=context.galaxyProjection(ship,view,rect);
+   const world=context.mat4Model(ship.x,ship.z,ship.y,d,scale/point.scale,pitch);
+   const model=context.mat4Model(ship.x*worldScale,ship.z*worldScale,ship.y*worldScale,d,scale/point.scale*worldScale,pitch);
+   const pv=context.mat4Mul(context.shipIconProjection(point,rect),look);
+   const mvp=context.mat4Mul(pv,model);
+   const origin=vertex(mvp,[0,0,0]);
+   close(origin[0]/origin[3],0);close(origin[1]/origin[3],0);
+   for(const v of [[1.6,0,0],[-1,0,-0.9],[-1,0,0.9],[-0.6,0.45,0]]) {
+    const w=vertex(world,v),expected=context.galaxyProjection({x:w[0],y:w[2],z:w[1]},view,rect);
+    const clip=vertex(mvp,v);
+    close(point.x+clip[0]/clip[3]*size/2,expected.x);
+    close(point.y-clip[1]/clip[3]*size/2,expected.y);
+    assert.ok(Math.hypot(expected.x-point.x,expected.y-point.y)<10,'small ship must fit its marker');
+   }
+   // A 90-degree change of heading rotates the nose from east to south in top view.
+   if(el===Math.PI/2 && pitch===0) {
+    const nose=vertex(mvp,[1.6,0,0]);
+    close(nose[0]/nose[3]*size/2,8*Math.cos(d-az));
+    close(-nose[1]/nose[3]*size/2,8*Math.sin(d-az));
+   }
+  }
+ }
+});
 function galaxyFixture() {
  const elements={};
  const element=()=>({value:'',dataset:{},handlers:{},attributes:{},setAttribute(k,v){this.attributes[k]=v;},addEventListener(k,f){this.handlers[k]=f;},focus(){},replaceChildren(){},add(){}});
@@ -140,6 +174,32 @@ function galaxyFixture() {
  const map=new Galaxy(canvas,ui,id=>calls.push(id),()=>{});
  return {map,canvas,ui,elements,calls};
 }
+
+test('map ship rendering preserves cloaking, depth order and selection',()=>{
+ const {map,elements}=galaxyFixture();
+ context.window={devicePixelRatio:2};
+ const ship=(i,extra={})=>({i,nm:`ship ${i}`,s:'CA',tm:'F',st:'alive',x:50000,y:50000,z:0,d:0,pitch:0,...extra});
+ const you=ship(1),players=[you,ship(2,{cl:true}),ship(3,{tm:'R',cl:true}),ship(4,{st:'dead'})];
+ const draws=[];
+ let icons=[];
+ map.shipRenderer={
+  render(points,camera,rect,lights,dpr){icons=points;assert.equal(dpr,2);},
+  draw(ctx,point){draws.push({kind:'ship',id:point.id,alpha:ctx.globalAlpha});},
+ };
+ const ctx=new Proxy({
+  measureText:t=>({width:t.length*6}),
+  fill(){draws.push({kind:'planet'});},
+ },{get:(o,k)=>k in o?o[k]:()=>{}});
+ map.view={center:{x:50000,y:50000,z:0},az:0,el:Math.PI/2,zoom:1};
+ map.selection={kind:'ship',id:2};
+ map.draw(ctx,you,players,[{n:7,name:'Altair',o:'F',a:30,f:3,x:50000,y:50000,z:10000}],{F:'#ff0',I:'#999'},1280,720);
+ assert.deepEqual(Array.from(icons,p=>p.id),[1,2]);
+ assert.deepEqual(draws,[{kind:'ship',id:1,alpha:1},{kind:'ship',id:2,alpha:0.4},{kind:'planet'}]);
+ assert.equal(elements['#galaxyName'].textContent,'ship 2');
+ assert.equal(elements['#galaxyLock'].disabled,true);
+ const point=icons[0];
+ assert.equal(context.galaxyHitTest([point],point.x+8,point.y).id,1,'nose remains clickable');
+});
 test('map rotation cannot issue flight commands; selection requires explicit lock',()=>{
  const {map,canvas,calls}=galaxyFixture();
  map.setOpen(true,[{n:7,name:'Altair'}]);map.planets=[{n:7,name:'Altair'}];

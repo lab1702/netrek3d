@@ -583,7 +583,7 @@ function frame() {
 
   if (mapOn) {
     fit2d(overlay); // hide 3D labels/reticle under the map
-    galaxyMap.draw(fit2d(mapCanvas), you, players, planets, TEAM_CSS, innerWidth, innerHeight, booms, now);
+    galaxyMap.draw(fit2d(mapCanvas), you, players, planets, TEAM_CSS, innerWidth, innerHeight, booms, now, lights);
   } else {
     drawOverlay(labels, you, players);
   }
