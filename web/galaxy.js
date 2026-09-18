@@ -143,10 +143,10 @@ class GalaxyMap {
   }
   draw(ctx, you, players, planets, colors, width, height, booms = [], now) {
     if (this.active && this.autoRotate && Number.isFinite(now)) {
-      // Twelve degrees per second, driven by the existing frame loop. Cap gaps
+      // Six degrees per second, driven by the existing frame loop. Cap gaps
       // so returning from a background tab cannot jump the camera forward.
       if (this.autoRotateTime !== null) {
-        this.view.az += Math.max(0,Math.min(100,now-this.autoRotateTime))*Math.PI/15000;
+        this.view.az += Math.max(0,Math.min(100,now-this.autoRotateTime))*Math.PI/30000;
       }
       this.autoRotateTime=now;
     }

@@ -164,7 +164,7 @@ test('galaxy auto-rotation follows elapsed time and cannot catch up after a long
   const frame=now=>map.draw(ctx,observer,[],[],{F:'#ff0',I:'#999'},1280,720,[],now);
   for(let i=0;i<=hz;i++)frame(i*1000/hz);
   close(map.view.el,el);
-  close(map.view.az-start,Math.PI/15); // twelve degrees in one second
+  close(map.view.az-start,Math.PI/30); // six degrees in one second
   const before=map.view.az;
   frame(60000);assert.ok(map.view.az-before<0.03,'background pause must not jump the view');
   return before-start;
