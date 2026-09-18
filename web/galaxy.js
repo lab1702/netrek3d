@@ -29,7 +29,7 @@ function galaxyVisibleShips(you, players) {
 }
 
 // The same camera as galaxyProjection, expressed in WebGL's (X,Z,Y) axes.
-function galaxyShipCamera(view) {
+function galaxyCamera(view) {
   const c=Math.cos(view.az), s=Math.sin(view.az), ce=Math.cos(view.el), se=Math.sin(view.el);
   const distance=220000/view.zoom;
   return {
@@ -44,7 +44,7 @@ class GalaxyMap {
     this.view = { center: {x:50000,y:50000,z:0}, az:-0.55, el:0.55, zoom:1 };
     this.selection = null; this.hover = null; this.points = []; this.active = false;
     this.grid = true; this.stems = false; this.follow = false; this.drag = null;
-    this.shipRenderer = null;
+    this.iconRenderer = null;
     this.autoRotate = false; this.autoRotateTime = null;
     this.autoRotateButton = ui.querySelector('#galaxyAutoRotate');
     this.autoRotateButton.onclick = () => this.setAutoRotate(!this.autoRotate);
@@ -196,16 +196,14 @@ class GalaxyMap {
     }).filter(p=>p && p.x>=rect.x+10 && p.x<=rect.x+rect.w-10 && p.y>=rect.y+10 && p.y<=rect.y+rect.h-10)
       .sort((a,b)=>b.depth-a.depth);
     this.points=points;
-    const shipPoints=points.filter(p=>p.kind==='ship');
-    if(shipPoints.length) {
-      if(!this.shipRenderer) this.shipRenderer=new ShipIconRenderer(document.createElement('canvas'));
-      this.shipRenderer.render(shipPoints,galaxyShipCamera(this.view),rect,lights,window.devicePixelRatio||1);
+    if(points.length) {
+      if(!this.iconRenderer) this.iconRenderer=new MapIconRenderer(document.createElement('canvas'));
+      this.iconRenderer.render(points,galaxyCamera(this.view),rect,lights,window.devicePixelRatio||1);
     }
     for(const p of points) {
       ctx.globalAlpha=p.object.cl?0.4:1;ctx.fillStyle=colors[p.team]||colors.I;
       ctx.strokeStyle=ctx.fillStyle;ctx.lineWidth=1.5;ctx.beginPath();
-      if(p.kind==='planet') {ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);ctx.fill();}
-      else this.shipRenderer.draw(ctx,p);
+      this.iconRenderer.draw(ctx,p);
       const chosen=p.kind===this.selection?.kind && p.id===this.selection?.id;
       if(chosen || (p.kind==='planet' && p.id===you.lk) || (p.kind==='ship' && p.id===you.i)) {
         ctx.strokeStyle=chosen?'#eceff1':p.kind==='ship'?'#eceff1':'#ffb74d';

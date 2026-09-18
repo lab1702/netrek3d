@@ -1,4 +1,4 @@
-// gl.js — minimal raw-WebGL renderer for the cockpit view.
+// gl.js — raw-WebGL rendering for the cockpit and miniature map objects.
 // World mapping: netrek (x, y, z) -> WebGL (x, z, y); game Z is altitude.
 "use strict";
 
@@ -15,6 +15,7 @@ const SHIP_FADE = 10000, SHIP_MAX = 20000; // matches the minimap radar range
 const BOOM_MAX = 30000; // distant battle flashes, but not cross-galaxy
 const SHIP_SCALE = 140;
 const SHIP_SPECULAR = 0.6;
+const PLANET_SPECULAR = 0.1;
 // Keep fragment lighting vectors and their squared lengths in mediump range.
 const LIGHT_SCALE = 1 / 2048;
 
@@ -351,7 +352,7 @@ Renderer.prototype.drawPlanet = function (px, py, team, dist, pz = 0) {
     const spin = 0; // planets don't need to spin; sphere is uniform
     this.drawMesh(this.sphereBuf, this.sphereCount, true,
                   mat4Model(px, pz, py, spin, PLANET_RADIUS),
-                  [color[0], color[1], color[2], alpha], 0, 0.1);
+                  [color[0], color[1], color[2], alpha], 0, PLANET_SPECULAR);
   }
   return alpha;
 };
@@ -431,40 +432,47 @@ Renderer.prototype.finish = function () {
   }
 };
 
-// Small map sprites use the cockpit mesh and shader, rendered into separate
+// Small map sprites use the cockpit meshes and shader, rendered into separate
 // transparent atlas tiles. The 2D map can then interleave ships and planets in
 // depth order, with its labels and selection rings still on top.
-const SHIP_ICON_SIZE = 32;
+const MAP_ICON_SIZE = 32;
 const SHIP_ICON_SCALE = 5; // the 2.6-unit hull is about 13 CSS pixels long
-const SHIP_ICON_WORLD_SCALE = 1 / 16; // keep distant map lighting in mediump range
+const MAP_ICON_WORLD_SCALE = 1 / 16; // keep distant map lighting in mediump range
 
-function shipIconProjection(point, rect) {
+function mapIconProjection(point, rect) {
   const focal = Math.min(rect.w, rect.h) * 1.25;
-  const projection = mat4Perspective(2*Math.atan(SHIP_ICON_SIZE/(2*focal)), 1,
-    2000*SHIP_ICON_WORLD_SCALE, 1000000*SHIP_ICON_WORLD_SCALE);
+  const projection = mat4Perspective(2*Math.atan(MAP_ICON_SIZE/(2*focal)), 1,
+    2000*MAP_ICON_WORLD_SCALE, 1000000*MAP_ICON_WORLD_SCALE);
   // Crop the map's perspective around this contact, preserving its view angle.
-  projection[8] = 2*(point.x-rect.x-rect.w/2)/SHIP_ICON_SIZE;
-  projection[9] = -2*(point.y-rect.y-rect.h/2)/SHIP_ICON_SIZE;
+  projection[8] = 2*(point.x-rect.x-rect.w/2)/MAP_ICON_SIZE;
+  projection[9] = -2*(point.y-rect.y-rect.h/2)/MAP_ICON_SIZE;
   return projection;
 }
 
-class ShipIconRenderer {
+class MapIconRenderer {
   constructor(canvas) {
     this.canvas = canvas;
     const gl = this.gl = canvas.getContext('webgl', {alpha:true, antialias:true});
-    if (!gl) throw new Error('WebGL unavailable for map ships');
+    if (!gl) throw new Error('WebGL unavailable for map objects');
     this.meshProg = makeProgram(gl, MESH_VS, MESH_FS);
     this.loc = {mesh:meshLocations(gl, this.meshProg)};
     const ship = makeShipMesh();
     this.shipBuf = gl.createBuffer(); this.shipCount = ship.count;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.shipBuf);
     gl.bufferData(gl.ARRAY_BUFFER, ship.verts, gl.STATIC_DRAW);
+    const sphere = makeSphere(28, 18);
+    this.sphereBuf = gl.createBuffer(); this.sphereCount = sphere.idx.length;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.sphereBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, sphere.verts, gl.STATIC_DRAW);
+    this.sphereIdx = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.sphereIdx);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, sphere.idx, gl.STATIC_DRAW);
     gl.enable(gl.DEPTH_TEST);
     gl.clearColor(0, 0, 0, 0);
   }
   render(points, camera, rect, lights, pixelRatio) {
-    const gl = this.gl, scale = SHIP_ICON_WORLD_SCALE;
-    const tile = Math.ceil(SHIP_ICON_SIZE * pixelRatio), columns = 16;
+    const gl = this.gl, scale = MAP_ICON_WORLD_SCALE;
+    const tile = Math.ceil(MAP_ICON_SIZE * pixelRatio), columns = 16;
     const height = Math.ceil(points.length/columns)*tile;
     if (this.canvas.width !== columns*tile || this.canvas.height < height) {
       this.canvas.width = columns*tile; this.canvas.height = height;
@@ -480,16 +488,22 @@ class ShipIconRenderer {
     points.forEach((point, i) => {
       const x = i%columns*tile, y = Math.floor(i/columns)*tile;
       gl.viewport(x,y,tile,tile); gl.scissor(x,y,tile,tile);
-      this.pv = mat4Mul(shipIconProjection(point, rect), view);
-      const p = point.object, color = TEAM_COLORS[p.tm] || TEAM_COLORS.I;
-      Renderer.prototype.drawMesh.call(this, this.shipBuf, this.shipCount, false,
-        mat4Model(p.x*scale,p.z*scale,p.y*scale,p.d,SHIP_ICON_SCALE/point.scale*scale,p.pitch),
-        [...color,1],0,SHIP_SPECULAR);
-      point.shipIcon = {x,y:this.canvas.height-y-tile,tile};
+      this.pv = mat4Mul(mapIconProjection(point, rect), view);
+      const p = point.object, color = TEAM_COLORS[point.team] || TEAM_COLORS.I;
+      if (point.kind === 'planet') {
+        Renderer.prototype.drawMesh.call(this, this.sphereBuf, this.sphereCount, true,
+          mat4Model(p.x*scale,p.z*scale,p.y*scale,0,point.radius/point.scale*scale),
+          [...color,1],0,PLANET_SPECULAR);
+      } else {
+        Renderer.prototype.drawMesh.call(this, this.shipBuf, this.shipCount, false,
+          mat4Model(p.x*scale,p.z*scale,p.y*scale,p.d,SHIP_ICON_SCALE/point.scale*scale,p.pitch),
+          [...color,1],0,SHIP_SPECULAR);
+      }
+      point.icon = {x,y:this.canvas.height-y-tile,tile};
     });
   }
   draw(ctx, point) {
-    const {x,y,tile} = point.shipIcon, size = SHIP_ICON_SIZE;
+    const {x,y,tile} = point.icon, size = MAP_ICON_SIZE;
     ctx.drawImage(this.canvas,x,y,tile,tile,point.x-size/2,point.y-size/2,size,size);
   }
 }

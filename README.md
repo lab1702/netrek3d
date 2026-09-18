@@ -157,6 +157,7 @@ true spatial distance, and relative altitude. Planet details include armies and
 facilities. A dashed line connects your ship to the selected object.
 Ships use miniature versions of the cockpit's 3D model, showing their heading
 and pitch with the same lighting and reflective highlights.
+Planets use the cockpit's shaded sphere model and lighting at a compact map size.
 Ship explosions briefly appear as small bursts with expanding, fading rings in the ship's team color.
 
 Selection alone does not change your course. Use **Lock planet** (or `l`) to

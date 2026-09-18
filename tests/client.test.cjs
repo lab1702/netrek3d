@@ -133,17 +133,17 @@ test('galaxy picking selects the frontmost visible contact and ignores empty spa
 test('map ship meshes keep their heading, pitch and screen size through camera rotation and zoom',()=>{
  const rect={x:16,y:105,w:970,h:575};
  const vertex=(m,v)=>[0,1,2,3].map(r=>m[r]*v[0]+m[r+4]*v[1]+m[r+8]*v[2]+m[r+12]);
- const {size,scale,worldScale}=vm.runInContext('({size:SHIP_ICON_SIZE,scale:SHIP_ICON_SCALE,worldScale:SHIP_ICON_WORLD_SCALE})',context);
+ const {size,scale,worldScale}=vm.runInContext('({size:MAP_ICON_SIZE,scale:SHIP_ICON_SCALE,worldScale:MAP_ICON_WORLD_SCALE})',context);
  for(const az of [-0.55,1.2]) for(const el of [0,0.55,Math.PI/2]) for(const zoom of [0.45,1,4]) {
   const view={center:{x:50000,y:50000,z:0},az,el,zoom};
-  const camera=context.galaxyShipCamera(view);
+  const camera=context.galaxyCamera(view);
   const look=context.mat4LookFrame(camera.eye.map(v=>v*worldScale),camera.frame);
   for(const d of [0,Math.PI/2,Math.PI]) for(const pitch of [-Math.PI/2,0,0.9]) {
    const ship={x:51000,y:52000,z:4000,d,pitch};
    const point=context.galaxyProjection(ship,view,rect);
    const world=context.mat4Model(ship.x,ship.z,ship.y,d,scale/point.scale,pitch);
    const model=context.mat4Model(ship.x*worldScale,ship.z*worldScale,ship.y*worldScale,d,scale/point.scale*worldScale,pitch);
-   const pv=context.mat4Mul(context.shipIconProjection(point,rect),look);
+   const pv=context.mat4Mul(context.mapIconProjection(point,rect),look);
    const mvp=context.mat4Mul(pv,model);
    const origin=vertex(mvp,[0,0,0]);
    close(origin[0]/origin[3],0);close(origin[1]/origin[3],0);
@@ -175,16 +175,16 @@ function galaxyFixture() {
  return {map,canvas,ui,elements,calls};
 }
 
-test('map ship rendering preserves cloaking, depth order and selection',()=>{
+test('map mesh rendering preserves cloaking, mixed depth order and selection',()=>{
  const {map,elements}=galaxyFixture();
  context.window={devicePixelRatio:2};
  const ship=(i,extra={})=>({i,nm:`ship ${i}`,s:'CA',tm:'F',st:'alive',x:50000,y:50000,z:0,d:0,pitch:0,...extra});
  const you=ship(1),players=[you,ship(2,{cl:true}),ship(3,{tm:'R',cl:true}),ship(4,{st:'dead'})];
  const draws=[];
  let icons=[];
- map.shipRenderer={
+ map.iconRenderer={
   render(points,camera,rect,lights,dpr){icons=points;assert.equal(dpr,2);},
-  draw(ctx,point){draws.push({kind:'ship',id:point.id,alpha:ctx.globalAlpha});},
+  draw(ctx,point){draws.push({kind:point.kind,id:point.id,alpha:ctx.globalAlpha});},
  };
  const ctx=new Proxy({
   measureText:t=>({width:t.length*6}),
@@ -193,8 +193,8 @@ test('map ship rendering preserves cloaking, depth order and selection',()=>{
  map.view={center:{x:50000,y:50000,z:0},az:0,el:Math.PI/2,zoom:1};
  map.selection={kind:'ship',id:2};
  map.draw(ctx,you,players,[{n:7,name:'Altair',o:'F',a:30,f:3,x:50000,y:50000,z:10000}],{F:'#ff0',I:'#999'},1280,720);
- assert.deepEqual(Array.from(icons,p=>p.id),[1,2]);
- assert.deepEqual(draws,[{kind:'ship',id:1,alpha:1},{kind:'ship',id:2,alpha:0.4},{kind:'planet'}]);
+ assert.deepEqual(Array.from(icons,p=>p.id),[1,2,7]);
+ assert.deepEqual(draws,[{kind:'ship',id:1,alpha:1},{kind:'ship',id:2,alpha:0.4},{kind:'planet',id:7,alpha:1}]);
  assert.equal(elements['#galaxyName'].textContent,'ship 2');
  assert.equal(elements['#galaxyLock'].disabled,true);
  const point=icons[0];
@@ -258,11 +258,13 @@ test('galaxy auto-rotation yields to mouse input and stays off after reopening',
 });
 
 test('galaxy renderer keeps planet labels, selection details, and finite geometry',()=>{
+ context.window={devicePixelRatio:1};
  const nodes={},element=()=>({dataset:{},handlers:{},setAttribute(){},addEventListener(k,f){this.handlers[k]=f;},focus(){}});
  const canvas=element();canvas.style={};
  const ui={...element(),querySelector:s=>nodes[s]||(nodes[s]=element()),querySelectorAll:()=>[]};
  let closed=0;const Galaxy=vm.runInContext('GalaxyMap',context);
  const map=new Galaxy(canvas,ui,()=>{},()=>closed++);
+ map.iconRenderer={render(){},draw(){}};
  const text=[];
  const ctx=new Proxy({measureText:t=>({width:t.length*7}),fillText:t=>text.push(t)},{get:(o,k)=>k in o?o[k]:(...args)=>{
   for(const a of args)if(typeof a==='number')assert.ok(Number.isFinite(a));
