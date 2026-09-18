@@ -393,7 +393,7 @@ func (g *Game) botEngage(p, target *Player, dist float64, th combatThreat) {
 	p.DesPitch = elevation(p.X, p.Y, p.Z, target.X, target.Y, target.Z)
 	interceptDir := g.botInterceptCourse(p, target)
 	if th.evade {
-		p.DesDir = g.botDodgeDir(p, interceptDir, th)
+		p.DesDir, p.DesPitch = g.botDodgeCourse(p, interceptDir)
 		p.DesSpeed = g.botEvasionSpeed(p, th)
 	} else {
 		dir, speed := g.botManeuver(p, target, dist, interceptDir)
@@ -759,7 +759,7 @@ func (g *Game) botNavigate(p *Player, dir float64, speed int, th combatThreat) {
 		g.breakOrbit(p)
 	}
 	if th.evade {
-		p.DesDir = g.botDodgeDir(p, dir, th)
+		p.DesDir, p.DesPitch = g.botDodgeCourse(p, dir)
 		p.DesSpeed = g.botEvasionSpeed(p, th)
 		p.Bot.Cooldown = 2
 		return
@@ -772,43 +772,51 @@ func (g *Game) botNavigate(p *Player, dir float64, speed int, th combatThreat) {
 	}
 }
 
-func (g *Game) botDodgeDir(p *Player, want float64, th combatThreat) float64 {
-	best, bestScore := p.Dir, -maxSearch
-	for i := 0; i < 12; i++ {
-		delta := float64(i) * math.Pi / 12
-		for _, sign := range []float64{1, -1} {
-			if delta == 0 && sign < 0 {
-				continue
-			}
-			dir := want + sign*delta
-			score := -g.botTorpDanger(p, dir)*10 -
-				math.Abs(math.Remainder(dir-want, 2*math.Pi))*100
-			// clearance from walls and planet defense zones
-			probe := heading(dir, p.DesPitch).scale(5000)
-			probeX, probeY, probeZ := p.X+probe.X, p.Y+probe.Y, p.Z+probe.Z
-			clr := math.Min(math.Min(probeX, GWidth-probeX), math.Min(probeY, GWidth-probeY))
-			clr = math.Min(clr, GWidth/2-math.Abs(probeZ))
-			for _, pl := range g.planets {
-				if pl.Owner != p.Team && pl.Owner != TeamNone &&
-					length3(pl.X-probeX, pl.Y-probeY, pl.Z-probeZ) < 2000 {
-					clr -= 2000 - length3(pl.X-probeX, pl.Y-probeY, pl.Z-probeZ)
+func (g *Game) botDodgeCourse(p *Player, want float64) (float64, float64) {
+	bestDir, bestPitch, bestScore := p.Dir, p.Pitch, -maxSearch
+	forward := heading(want, p.DesPitch)
+	right := vec3{-math.Sin(want), math.Cos(want), 0}
+	up := vec3{-math.Cos(want) * math.Sin(p.DesPitch), -math.Sin(want) * math.Sin(p.DesPitch), math.Cos(p.DesPitch)}
+	// Search turns in both local planes. Changing yaw alone gives identical
+	// flight paths at a pole and cannot dodge an oncoming vertical torpedo.
+	for axis, tangent := range []vec3{right, up} {
+		for i := 0; i < 12; i++ {
+			delta := float64(i) * math.Pi / 12
+			for _, sign := range []float64{1, -1} {
+				if delta == 0 && (sign < 0 || axis > 0) {
+					continue
 				}
-			}
-			if clr < 3000 {
-				score -= (3000 - clr) * 2
-			}
-			if score > bestScore {
-				best, bestScore = dir, score
+				v := forward.scale(math.Cos(delta)).add(tangent.scale(sign * math.Sin(delta)))
+				course := Player{Dir: want, Pitch: p.DesPitch}
+				setHeading(&course, v)
+				score := -g.botTorpDanger(p, course.Dir, course.Pitch)*10 - delta*100
+				// clearance from walls and planet defense zones
+				probe := v.scale(5000)
+				probeX, probeY, probeZ := p.X+probe.X, p.Y+probe.Y, p.Z+probe.Z
+				clr := math.Min(math.Min(probeX, GWidth-probeX), math.Min(probeY, GWidth-probeY))
+				clr = math.Min(clr, GWidth/2-math.Abs(probeZ))
+				for _, pl := range g.planets {
+					if pl.Owner != p.Team && pl.Owner != TeamNone &&
+						length3(pl.X-probeX, pl.Y-probeY, pl.Z-probeZ) < 2000 {
+						clr -= 2000 - length3(pl.X-probeX, pl.Y-probeY, pl.Z-probeZ)
+					}
+				}
+				if clr < 3000 {
+					score -= (3000 - clr) * 2
+				}
+				if score > bestScore {
+					bestDir, bestPitch, bestScore = course.Dir, course.Pitch, score
+				}
 			}
 		}
 	}
-	return best
+	return bestDir, bestPitch
 }
 
-func (g *Game) botTorpDanger(p *Player, dir float64) float64 {
+func (g *Game) botTorpDanger(p *Player, dir, pitch float64) float64 {
 	danger := 0.0
 	v := float64(max(p.Speed, 2) * Warp1)
-	v3 := heading(dir, p.DesPitch).scale(v)
+	v3 := heading(dir, pitch).scale(v)
 	vx, vy, vz := v3.X, v3.Y, v3.Z
 	for _, t := range g.torps {
 		if t.Team == p.Team || length3(t.X-p.X, t.Y-p.Y, t.Z-p.Z) > 6000 {

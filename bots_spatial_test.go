@@ -124,3 +124,52 @@ func TestBotCombatManeuversAreSpatial(t *testing.T) {
 		}
 	}
 }
+
+func TestBotDodgeChangesPitchForVerticalThreats(t *testing.T) {
+	for _, attitude := range []struct {
+		name       string
+		yaw, pitch float64
+	}{
+		{"up", 0, math.Pi / 2},
+		{"up-other-yaw", math.Pi / 2, math.Pi / 2},
+		{"down", 0, -math.Pi / 2},
+		{"down-other-yaw", math.Pi / 2, -math.Pi / 2},
+	} {
+		for _, route := range []string{"navigate", "engage"} {
+			t.Run(attitude.name+"/"+route, func(t *testing.T) {
+				g := NewGame()
+				p := addPlayer(t, g, "bot", "F", "CA").player
+				p.Bot = newBotState()
+				p.X, p.Y, p.Z = 50000, 50000, 0
+				p.Dir, p.DesDir = attitude.yaw, attitude.yaw
+				p.Pitch, p.DesPitch = attitude.pitch, attitude.pitch
+				p.Speed, p.Fuel = 5, 0
+				forward := heading(p.Dir, p.Pitch)
+				position := vec3{p.X, p.Y, p.Z}.add(forward.scale(1300))
+				// A concentrated volley makes avoiding the collision worth the
+				// course-change penalty in the existing dodge scoring rule.
+				for id := 0; id < 4; id++ {
+					g.torps[id] = &Torp{Team: TeamRom, X: position.X, Y: position.Y, Z: position.Z,
+						Dir: p.Dir + math.Pi, Pitch: -p.Pitch, Speed: 12}
+				}
+				before := g.botTorpDanger(p, p.DesDir, p.DesPitch)
+				th := g.botThreats(p)
+				if !th.evade || before <= 0 {
+					t.Fatal("fixture must trigger a dodge")
+				}
+				if route == "navigate" {
+					g.botNavigate(p, p.DesDir, 5, th)
+				} else {
+					enemy := addPlayer(t, g, "enemy", "R", "CA").player
+					position = vec3{p.X, p.Y, p.Z}.add(forward.scale(5000))
+					enemy.X, enemy.Y, enemy.Z = position.X, position.Y, position.Z
+					g.botEngage(p, enemy, 5000, th)
+				}
+				after := g.botTorpDanger(p, p.DesDir, p.DesPitch)
+				if after >= before || forward.dot(heading(p.DesDir, p.DesPitch)) > 0.999 {
+					t.Fatalf("dodge kept the collision course: danger %v -> %v, pitch %v", before, after, p.DesPitch)
+				}
+			})
+		}
+	}
+}
