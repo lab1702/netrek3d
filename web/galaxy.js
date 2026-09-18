@@ -230,14 +230,14 @@ class GalaxyMap {
       ctx.globalAlpha=(1-age)*(1-age);ctx.fillStyle=color;
       ctx.beginPath();ctx.arc(p.x,p.y,2,0,Math.PI*2);ctx.fill();
     }
-    // Label priority protects the selected target and your ship from crowded fields.
+    // Only label ships; planet names remain in the selector and details panel.
     ctx.globalAlpha=1;ctx.font='12px Consolas, monospace';ctx.textAlign='left';ctx.textBaseline='top';
     const occupied=points.map(p=>({x:p.x-8,y:p.y-8,w:16,h:16}));
     const priority=p=>(p.kind===this.selection?.kind&&p.id===this.selection?.id)?4:
-      (p.kind===this.hover?.kind&&p.id===this.hover?.id)?3:(p.kind==='ship'&&p.id===you.i)?2:p.kind==='planet'?1:0;
-    for(const p of [...points].sort((a,b)=>priority(b)-priority(a)||a.depth-b.depth)) {
+      (p.kind===this.hover?.kind&&p.id===this.hover?.id)?3:p.id===you.i?2:0;
+    for(const p of points.filter(p=>p.kind==='ship').sort((a,b)=>priority(b)-priority(a)||a.depth-b.depth)) {
       if(priority(p)===0)continue;
-      const label=p.kind==='planet'?p.object.name:p.id===you.i?'YOU':p.object.nm;
+      const label=p.id===you.i?'YOU':p.object.nm;
       const w=ctx.measureText(label).width;let box=null;
       for(const y of [p.y+14,p.y-28])for(const x of [p.x+14,p.x-w-14]) {
         const b={x,y,w,h:14};

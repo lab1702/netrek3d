@@ -257,7 +257,7 @@ test('galaxy auto-rotation yields to mouse input and stays off after reopening',
  }
 });
 
-test('galaxy renderer keeps planet labels, selection details, and finite geometry',()=>{
+test('galaxy renderer hides planet labels but keeps selection details and finite geometry',()=>{
  context.window={devicePixelRatio:1};
  const nodes={},element=()=>({dataset:{},handlers:{},setAttribute(){},addEventListener(k,f){this.handlers[k]=f;},focus(){}});
  const canvas=element();canvas.style={};
@@ -272,7 +272,7 @@ test('galaxy renderer keeps planet labels, selection details, and finite geometr
  const pl={n:7,name:'Altair',o:'F',a:30,f:3,x:50000,y:50000,z:12000};
  map.selection={kind:'planet',id:7};
  map.draw(ctx,observer,[],[pl],{F:'#ffd54f',I:'#999'},1280,720);
- assert.ok(text.includes('Altair'),'planet labels must not collide with their own glyphs');
+ assert.ok(!text.includes('Altair'),'planet names must stay off the map, even when selected');
  assert.equal(nodes['#galaxyName'].textContent,'Altair');
  assert.ok(nodes['#galaxyDetails'].textContent.includes('ΔZ 9,000'));
  assert.equal(nodes['#galaxyLock'].disabled,false);
