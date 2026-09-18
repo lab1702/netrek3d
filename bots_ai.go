@@ -116,6 +116,7 @@ func (g *Game) updateBot(p *Player) {
 	// stay orbiting a friendly planet while healing and safe
 	if p.Orbiting >= 0 && g.planets[p.Orbiting].Owner == p.Team {
 		if (needRepair || needFuel) && enemyDist > botRepairSafeDist && !recentlyHit {
+			botReservePlanet(p, nil, g.tick)
 			p.DesSpeed = 0
 			p.ShieldsUp = false
 			if needRepair {
@@ -128,6 +129,7 @@ func (g *Game) updateBot(p *Player) {
 
 	// repair in open space when safe
 	if needRepair && enemyDist > botRepairSafeDist && !p.RepairMode && p.Speed < 2 && !recentlyHit {
+		botReservePlanet(p, nil, g.tick)
 		p.RepairMode = true
 		p.DesSpeed = 0
 		p.ShieldsUp = false
@@ -138,25 +140,9 @@ func (g *Game) updateBot(p *Player) {
 		p.RepairMode = false
 	}
 
-	// resume an interrupted planet approach once defenders are handled
-	if b.PlanetApproach >= 0 {
-		ap := g.planets[b.PlanetApproach]
-		count, minDist, _, _, _ := g.planetDefenders(ap, p.Team)
-		if count == 0 || minDist > 10000 {
-			d := length3(ap.X-p.X, ap.Y-p.Y, ap.Z-p.Z)
-			if d < EntOrbDist {
-				b.PlanetApproach = -1
-			} else {
-				p.DesPitch = elevation(p.X, p.Y, p.Z, ap.X, ap.Y, ap.Z)
-				g.botNavigate(p, math.Atan2(ap.Y-p.Y, ap.X-p.X), g.botApproachSpeed(p, d), th)
-				b.Cooldown = 5
-				return
-			}
-		}
-	}
-
 	// travel to a repair/fuel planet when hurting and not pressed
 	if (needRepair || needFuel) && (enemyDist > 15000 || critical) {
+		botReservePlanet(p, nil, g.tick)
 		var target *Planet
 		if needFuel {
 			target = g.botNearestPlanet(p, func(pl *Planet) bool {
@@ -191,12 +177,13 @@ func (g *Game) updateBot(p *Player) {
 func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th combatThreat) {
 	b := p.Bot
 
-	// carrying: deliver to the nearest takeable planet (never 3rd space)
+	// carrying: deliver in small groups to takeable planets (never 3rd space)
 	if p.Armies > 0 {
-		drop := g.botNearestPlanet(p, func(pl *Planet) bool {
+		drop := g.botGroupNearestPlanet(p, func(pl *Planet) bool {
 			return pl.Owner == TeamNone ||
 				(pl.Owner != p.Team && pl.Armies < 5 && !g.thirdSpace(pl))
 		})
+		botReservePlanet(p, drop, g.tick)
 		if drop == nil {
 			g.botSafeArea(p)
 			return
@@ -219,6 +206,7 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 			if enemyDist < 2000 && p.Damage > p.Ship.MaxDamage*2/3 {
 				g.breakOrbit(p)
 			} else {
+				botReservePlanet(p, pl, g.tick)
 				b.Cooldown = 10
 				return
 			}
@@ -228,27 +216,23 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 	// pick an objective
 	var target *Planet
 	canCarryMore := carryCapacity(p) > p.Armies
-	armyPlanet := g.botNearestPlanet(p, func(pl *Planet) bool {
-		return pl.Owner == p.Team && pl.Armies > 4
-	})
-	bombPlanet := g.botNearestPlanet(p, func(pl *Planet) bool {
-		return pl.Owner != p.Team && pl.Owner != TeamNone && pl.Armies > 4 &&
-			!g.thirdSpace(pl)
-	})
-	takePlanet := g.botBestTakePlanet(p)
-	switch {
-	case canCarryMore && armyPlanet != nil:
-		target = armyPlanet
-	case bombPlanet != nil:
-		target = bombPlanet
-	case takePlanet != nil && canCarryMore:
-		target = takePlanet
-	case enemy != nil && enemyDist < 20000:
-		g.botEngage(p, enemy, enemyDist, th)
-		return
+	if canCarryMore {
+		target = g.botGroupNearestPlanet(p, func(pl *Planet) bool {
+			return pl.Owner == p.Team && pl.Armies > 4
+		})
 	}
 	if target == nil {
-		if enemy != nil && enemyDist < 15000 {
+		target = g.botGroupNearestPlanet(p, func(pl *Planet) bool {
+			return pl.Owner != p.Team && pl.Owner != TeamNone && pl.Armies > 4 &&
+				!g.thirdSpace(pl)
+		})
+	}
+	if target == nil && canCarryMore {
+		target = g.botBestTakePlanet(p)
+	}
+	botReservePlanet(p, target, g.tick)
+	if target == nil {
+		if enemy != nil && enemyDist < 20000 {
 			g.botEngage(p, enemy, enemyDist, th)
 		} else {
 			g.botPatrol(p, th)
@@ -261,7 +245,7 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 	if count > 0 && length3(target.X-p.X, target.Y-p.Y, target.Z-p.Z) > EntOrbDist {
 		if score > 2500 || minDist < 6000 {
 			if count >= 3 && g.botAlliesNear(p, 15000) == 0 {
-				b.PlanetApproach = -1
+				botReservePlanet(p, nil, g.tick)
 				b.Cooldown = 50 // too hot, look elsewhere
 				return
 			}
@@ -270,7 +254,6 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 				primary = closest
 			}
 			if primary != nil {
-				b.PlanetApproach = target.N
 				g.breakOrbit(p)
 				g.botEngage(p, primary, length3(primary.X-p.X, primary.Y-p.Y, primary.Z-p.Z), th)
 				return
@@ -278,9 +261,7 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 		}
 	}
 
-	b.PlanetApproach = target.N
 	if g.botGoOrbit(p, target, th) {
-		b.PlanetApproach = -1
 		switch {
 		case target.Owner == p.Team:
 			if target.Armies > 4 && canCarryMore {
@@ -304,6 +285,8 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 	}
 	if enemy != nil && enemyDist < 4000 {
 		g.botEngage(p, enemy, enemyDist, th)
+	} else {
+		b.Cooldown = 5
 	}
 }
 
@@ -313,6 +296,7 @@ func (g *Game) botFreePlay(p *Player, enemy *Player, enemyDist float64, th comba
 	p.Bot.Role = g.botRole(p)
 	switch p.Bot.Role {
 	case botRoleHunter:
+		botReservePlanet(p, nil, g.tick)
 		if t := g.botBestTarget(p); t != nil {
 			d := length3(t.X-p.X, t.Y-p.Y, t.Z-p.Z)
 			if critical && d < 6000 {
@@ -323,6 +307,7 @@ func (g *Game) botFreePlay(p *Player, enemy *Player, enemyDist float64, th comba
 			return
 		}
 	case botRoleDefender:
+		botReservePlanet(p, nil, g.tick)
 		if pl := g.botPlanetToDefend(p); pl != nil {
 			d := length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z)
 			if d > 5000 {
@@ -335,6 +320,7 @@ func (g *Game) botFreePlay(p *Player, enemy *Player, enemyDist float64, th comba
 		}
 	case botRoleRaider:
 		if pl := g.botPlanetToRaid(p); pl != nil {
+			botReservePlanet(p, pl, g.tick)
 			if g.botGoOrbit(p, pl, th) {
 				botStartBombing(p)
 				p.Bot.Cooldown = 30
@@ -342,6 +328,7 @@ func (g *Game) botFreePlay(p *Player, enemy *Player, enemyDist float64, th comba
 			return
 		}
 	}
+	botReservePlanet(p, nil, g.tick)
 	if enemy != nil {
 		g.botEngage(p, enemy, enemyDist, th)
 		return
@@ -934,7 +921,8 @@ func (g *Game) botGoOrbit(p *Player, pl *Planet, th combatThreat) bool {
 		return p.Orbiting == pl.N
 	}
 	p.DesPitch = elevation(p.X, p.Y, p.Z, pl.X, pl.Y, pl.Z)
-	g.botNavigate(p, math.Atan2(pl.Y-p.Y, pl.X-p.X), g.botApproachSpeed(p, d), th)
+	speed := g.botGroupCruiseSpeed(p, pl, g.botApproachSpeed(p, d))
+	g.botNavigate(p, math.Atan2(pl.Y-p.Y, pl.X-p.X), speed, th)
 	return false
 }
 
@@ -955,15 +943,13 @@ func (g *Game) botNearestPlanet(p *Player, ok func(*Planet) bool) *Planet {
 }
 
 func (g *Game) botBestTakePlanet(p *Player) *Planet {
-	var best *Planet
-	bestScore := -maxSearch
-	for _, pl := range g.planets {
+	return g.botGroupPlanet(p, func(pl *Planet) (float64, bool) {
 		if pl.Owner == p.Team || g.thirdSpace(pl) {
-			continue
+			return 0, false
 		}
 		d := length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z)
 		if d > 30000 {
-			continue
+			return 0, false
 		}
 		score := 15000 / math.Max(d, 1)
 		if p.Armies > pl.Armies {
@@ -981,11 +967,8 @@ func (g *Game) botBestTakePlanet(p *Player) *Planet {
 			score -= 5000
 		}
 		score += float64(allies) * 300
-		if score > bestScore {
-			best, bestScore = pl, score
-		}
-	}
-	return best
+		return score, true
+	})
 }
 
 func (g *Game) botPlanetToDefend(p *Player) *Planet {
@@ -1026,26 +1009,21 @@ func (g *Game) botPlanetToDefend(p *Player) *Planet {
 }
 
 func (g *Game) botPlanetToRaid(p *Player) *Planet {
-	var best *Planet
-	bestScore := -maxSearch
-	for _, pl := range g.planets {
+	return g.botGroupPlanet(p, func(pl *Planet) (float64, bool) {
 		if pl.Owner == p.Team || pl.Owner == TeamNone || pl.Armies < 5 || g.thirdSpace(pl) {
-			continue
+			return 0, false
 		}
 		d := length3(pl.X-p.X, pl.Y-p.Y, pl.Z-p.Z)
 		if d > 20000 {
-			continue
+			return 0, false
 		}
 		count, _, _, _, _ := g.planetDefenders(pl, p.Team)
 		if count > 0 {
-			continue
+			return 0, false
 		}
 		score := 10000/math.Max(d, 1) + float64(pl.Armies)*500
-		if score > bestScore {
-			best, bestScore = pl, score
-		}
-	}
-	return best
+		return score, true
+	})
 }
 
 // planetDefenders: enemies of `team` near the planet (netrek-web bot_planet.go:158)
@@ -1125,6 +1103,7 @@ func (g *Game) threatenedPlanet(p *Player) (*Planet, *Player, float64) {
 
 func (g *Game) botDefendPlanet(p *Player, pl *Planet, enemy *Player, dist float64) {
 	b := p.Bot
+	botReservePlanet(p, nil, g.tick)
 	b.Role = botRoleDefender
 	b.DefenseTarget = pl.N
 	p.RepairMode = false

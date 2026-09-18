@@ -79,6 +79,10 @@ cancels it. The same controls are available in flight with `\`.
 Bot AI is modeled on [lab1702/netrek-web](https://github.com/lab1702/netrek-web): threat
 assessment, torpedo dodging, lead-aimed torps and spreads, target scoring, planet defense, and a
 full T-mode planet game (bomb, pick up, take). Bots count toward T-mode player counts.
+Planet missions favor groups of three, allowing pairs or a fourth ship to avoid
+leaving a nearby teammate alone. Groups reserve separate objectives and match
+nearby teammates' cruise speeds. Repair and urgent defense take priority; when
+too few useful planets remain, larger groups share the remaining objectives.
 
 ## Rules
 

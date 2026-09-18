@@ -22,8 +22,9 @@ type botState struct {
 	Target              int     // current combat target id, -1
 	TargetLock          int     // ticks remaining on target lock (prevents thrashing)
 	TargetValue         float64
-	PlanetApproach      int // planet we were heading to before a fight, -1
-	DefenseTarget       int // planet we are defending, -1
+	PlanetTarget        int   // reserved planet objective, including while orbiting, -1
+	PlanetTargetUntil   int64 // reservation expires if combat interrupts the objective
+	DefenseTarget       int   // planet we are defending, -1
 	PrevDamage          int
 	HitTimer            int // >0 for a while after taking damage (unseen attackers)
 	RespawnDelay        int
@@ -44,7 +45,7 @@ const (
 )
 
 func newBotState() *botState {
-	return &botState{Role: botRoleUnset, Target: -1, PlanetApproach: -1, DefenseTarget: -1}
+	return &botState{Role: botRoleUnset, Target: -1, PlanetTarget: -1, DefenseTarget: -1}
 }
 
 func teamIndex(letter string) int {
