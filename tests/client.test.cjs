@@ -129,15 +129,19 @@ test('galaxy picking selects the frontmost visible contact and ignores empty spa
  const visible=context.galaxyVisibleShips(observer,[{i:2,tm:'R',cl:true,st:'alive'},{i:3,tm:'F',cl:true,st:'alive'},{i:4,tm:'R',st:'dead'}]);
  assert.deepEqual(Array.from(visible,p=>p.i),[3]);
 });
-test('map rotation cannot issue flight commands; selection requires explicit lock',()=>{
+function galaxyFixture() {
  const elements={};
- const element=()=>({value:'',dataset:{},handlers:{},addEventListener(k,f){this.handlers[k]=f;},focus(){},replaceChildren(){},add(){}});
+ const element=()=>({value:'',dataset:{},handlers:{},attributes:{},setAttribute(k,v){this.attributes[k]=v;},addEventListener(k,f){this.handlers[k]=f;},focus(){},replaceChildren(){},add(){}});
  const canvas=element();canvas.style={};canvas.setPointerCapture=()=>{};canvas.hasPointerCapture=()=>true;canvas.releasePointerCapture=()=>{};
- const ui={querySelector:s=>elements[s]||(elements[s]=element()),querySelectorAll:()=>[]};
+ const ui={...element(),querySelector:s=>elements[s]||(elements[s]=element()),querySelectorAll:()=>[]};
  const calls=[];
  context.document={body:{classList:{toggle(){}}}};context.Option=function(){};
  const Galaxy=vm.runInContext('GalaxyMap',context);
  const map=new Galaxy(canvas,ui,id=>calls.push(id),()=>{});
+ return {map,canvas,ui,elements,calls};
+}
+test('map rotation cannot issue flight commands; selection requires explicit lock',()=>{
+ const {map,canvas,calls}=galaxyFixture();
  map.setOpen(true,[{n:7,name:'Altair'}]);map.planets=[{n:7,name:'Altair'}];
  map.points=[{x:100,y:100,radius:5,depth:100,kind:'planet',id:7}];
  const event=(x,y)=>({button:0,pointerId:1,clientX:x,clientY:y});
@@ -151,10 +155,52 @@ test('map rotation cannot issue flight commands; selection requires explicit loc
  map.rotate(0,100);assert.equal(map.view.el,Math.PI/2);
 });
 
+test('galaxy auto-rotation follows elapsed time and cannot catch up after a long pause',()=>{
+ const run=hz=>{
+  const {map,elements}=galaxyFixture();
+  map.setOpen(true,[]);elements['#galaxyAutoRotate'].onclick();
+  const start=map.view.az,el=map.view.el;
+  const ctx=new Proxy({measureText:t=>({width:t.length*6})},{get:(o,k)=>k in o?o[k]:()=>{}});
+  const frame=now=>map.draw(ctx,observer,[],[],{F:'#ff0',I:'#999'},1280,720,[],now);
+  for(let i=0;i<=hz;i++)frame(i*1000/hz);
+  close(map.view.el,el);
+  close(map.view.az-start,Math.PI/15); // twelve degrees in one second
+  const before=map.view.az;
+  frame(60000);assert.ok(map.view.az-before<0.03,'background pause must not jump the view');
+  return before-start;
+ };
+ close(run(30),run(120));
+});
+
+test('galaxy auto-rotation yields to mouse input and stays off after reopening',()=>{
+ const {map,canvas,ui,elements}=galaxyFixture();
+ const button=elements['#galaxyAutoRotate'];
+ map.setOpen(true,[]);
+ const enable=()=>{
+  // A real click reaches the container's pointer handler before onclick.
+  ui.handlers.pointerdown({target:button});button.onclick();
+  assert.equal(button.attributes['aria-pressed'],'true');
+ };
+ for(const stop of [
+  ()=>canvas.handlers.pointerdown({button:2}),
+  ()=>canvas.handlers.pointerdown({button:0,pointerId:1,clientX:100,clientY:100}),
+  ()=>canvas.handlers.wheel({deltaY:10,preventDefault(){}}),
+  ()=>ui.handlers.pointerdown({target:elements['#galaxyCenter']}),
+  ()=>ui.handlers.wheel({target:button}),
+  ()=>map.key({key:'ArrowLeft',target:{tagName:'CANVAS'},preventDefault(){}}),
+  ()=>{ui.handlers.pointerdown({target:button});button.onclick();},
+  ()=>{map.setOpen(false,[]);map.setOpen(true,[]);},
+ ]) {
+  enable();stop();
+  assert.equal(map.autoRotate,false);
+  assert.equal(button.attributes['aria-pressed'],'false');
+ }
+});
+
 test('galaxy renderer keeps planet labels, selection details, and finite geometry',()=>{
- const nodes={},element=()=>({dataset:{},handlers:{},addEventListener(k,f){this.handlers[k]=f;},focus(){}});
+ const nodes={},element=()=>({dataset:{},handlers:{},setAttribute(){},addEventListener(k,f){this.handlers[k]=f;},focus(){}});
  const canvas=element();canvas.style={};
- const ui={querySelector:s=>nodes[s]||(nodes[s]=element()),querySelectorAll:()=>[]};
+ const ui={...element(),querySelector:s=>nodes[s]||(nodes[s]=element()),querySelectorAll:()=>[]};
  let closed=0;const Galaxy=vm.runInContext('GalaxyMap',context);
  const map=new Galaxy(canvas,ui,()=>{},()=>closed++);
  const text=[];

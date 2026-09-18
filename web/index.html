@@ -22,6 +22,7 @@
   .galaxy-heading strong { letter-spacing: .14em; color: var(--amber); }
   .galaxy-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .galaxy-controls label { margin-left: 8px; }
+  #galaxyAutoRotate[aria-pressed="true"] { background: var(--amber); color: var(--bg-0); border-color: var(--amber); }
   .galaxy-details { position: absolute; right: 16px; top: 124px; width: 260px; pointer-events: auto; }
   .galaxy-details select { width: 100%; margin-bottom: 18px; }
   #galaxyName { font-size: 16px; color: var(--fg-1); margin: 0 0 10px; }
@@ -128,6 +129,7 @@
       <button class="l7-btn l7-btn--outline btn-sm" data-map-view="3d">3D</button>
       <button class="l7-btn l7-btn--outline btn-sm" data-map-view="top">Top</button>
       <button class="l7-btn l7-btn--outline btn-sm" data-map-view="side">Side</button>
+      <button id="galaxyAutoRotate" class="l7-btn l7-btn--outline btn-sm" aria-pressed="false" title="Slowly rotate the galaxy; click, drag, or scroll to stop">Auto-rotate</button>
       <button id="galaxyReset" class="l7-btn l7-btn--outline btn-sm">Reset galaxy</button>
       <button id="galaxyCenter" class="l7-btn l7-btn--outline btn-sm">Center on ship</button>
       <button id="galaxyZoomOut" class="l7-btn l7-btn--outline btn-sm" aria-label="Zoom out">−</button>

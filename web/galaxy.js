@@ -34,10 +34,20 @@ class GalaxyMap {
     this.view = { center: {x:50000,y:50000,z:0}, az:-0.55, el:0.55, zoom:1 };
     this.selection = null; this.hover = null; this.points = []; this.active = false;
     this.grid = true; this.stems = false; this.follow = false; this.drag = null;
+    this.autoRotate = false; this.autoRotateTime = null;
+    this.autoRotateButton = ui.querySelector('#galaxyAutoRotate');
+    this.autoRotateButton.onclick = () => this.setAutoRotate(!this.autoRotate);
+    // Let the toggle handle its own click; every other mouse interaction stops it.
+    const stopRotation = e => {
+      if (e.target !== this.autoRotateButton) this.setAutoRotate(false);
+    };
+    ui.addEventListener('pointerdown', stopRotation);
+    ui.addEventListener('wheel', () => this.setAutoRotate(false), {passive:true});
     this.select = ui.querySelector('#galaxySelect');
     this.title = ui.querySelector('#galaxyName'); this.details = ui.querySelector('#galaxyDetails');
     this.lock = ui.querySelector('#galaxyLock'); this.lastDetails = '';
     ui.querySelectorAll('[data-map-view]').forEach(button => button.addEventListener('click', () => {
+      this.setAutoRotate(false);
       const preset = button.dataset.mapView;
       this.view.az = preset === '3d' ? -0.55 : 0;
       this.view.el = preset === 'top' ? Math.PI/2 : preset === 'side' ? 0 : 0.55;
@@ -52,7 +62,9 @@ class GalaxyMap {
     this.select.onchange = () => { this.selection = this.select.value === '' ? null : {kind:'planet',id:Number(this.select.value)}; };
     this.lock.onclick = () => this.lockSelected();
     canvas.addEventListener('pointerdown', e => {
-      if (!this.active || e.button !== 0 || this.drag) return;
+      if (!this.active) return;
+      this.setAutoRotate(false);
+      if (e.button !== 0 || this.drag) return;
       this.drag = {id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};
       canvas.setPointerCapture(e.pointerId);
     });
@@ -86,14 +98,24 @@ class GalaxyMap {
     }, {passive:false});
   }
   reset() {
+    this.setAutoRotate(false);
     this.follow=false; this.view={center:{x:50000,y:50000,z:0},az:-0.55,el:0.55,zoom:1};
   }
   rotate(az, el) {
+    this.setAutoRotate(false);
     this.view.az += az;
     this.view.el = Math.max(-Math.PI/2,Math.min(Math.PI/2,this.view.el+el));
   }
-  zoom(factor) { this.view.zoom=Math.max(0.45,Math.min(4,this.view.zoom*factor)); }
+  zoom(factor) {
+    this.setAutoRotate(false);
+    this.view.zoom=Math.max(0.45,Math.min(4,this.view.zoom*factor));
+  }
+  setAutoRotate(enabled) {
+    this.autoRotate=enabled && this.active; this.autoRotateTime=null;
+    this.autoRotateButton.setAttribute('aria-pressed',String(this.autoRotate));
+  }
   setOpen(open, planets) {
+    this.setAutoRotate(false);
     this.active=open; this.canvas.style.display=open?'block':'none'; this.ui.hidden=!open;
     document.body.classList.toggle('map-open',open);
     this.drag=null; this.hover=null;
@@ -120,6 +142,14 @@ class GalaxyMap {
     }
   }
   draw(ctx, you, players, planets, colors, width, height, booms = [], now) {
+    if (this.active && this.autoRotate && Number.isFinite(now)) {
+      // Twelve degrees per second, driven by the existing frame loop. Cap gaps
+      // so returning from a background tab cannot jump the camera forward.
+      if (this.autoRotateTime !== null) {
+        this.view.az += Math.max(0,Math.min(100,now-this.autoRotateTime))*Math.PI/15000;
+      }
+      this.autoRotateTime=now;
+    }
     this.planets=planets;
     const rect=galaxyViewport(width,height);
     if(this.follow) this.view.center={x:you.x,y:you.y,z:you.z};

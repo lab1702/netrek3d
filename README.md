@@ -164,7 +164,9 @@ but cannot be locked; the server currently supports planet autopilot only.
 
 **3D / Top / Side** change the viewing angle. **Center on ship** follows your ship;
 **Reset galaxy** returns to the default galaxy view and zoom. Grid and altitude stems
-can be toggled independently. Arrow keys rotate the map when not editing a control.
+can be toggled independently. **Auto-rotate** turns the galaxy once every 30 seconds
+until toggled off, the map closes, or you click, drag, or scroll on the map or its controls.
+Manual keyboard rotation and zoom also stop it. Arrow keys rotate the map when not editing a control.
 `m` or Escape closes the map without quitting your ship. The game continues running
 while the map is open; flight and weapon shortcuts are suppressed until it closes.
 
