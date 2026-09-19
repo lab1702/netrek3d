@@ -155,6 +155,8 @@ Press `m` to open the live 3D galaxy. Drag to orbit the camera and scroll (or us
 `+`/`−`) to zoom. Click a planet or visible ship to inspect its coordinates,
 true spatial distance, and relative altitude. Planet details include armies and
 facilities. A dashed line connects your ship to the selected object.
+The toolbar shows live planet counts for each team and independent planets, including
+teams with no planets, in both pickup and T-mode.
 Ships use miniature versions of the cockpit's 3D model, showing their heading
 and pitch with the same lighting and reflective highlights.
 Planets use the cockpit's shaded sphere model and lighting at a compact map size.

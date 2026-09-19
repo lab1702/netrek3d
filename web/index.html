@@ -22,8 +22,11 @@
   .galaxy-heading strong { letter-spacing: .14em; color: var(--amber); }
   .galaxy-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .galaxy-controls label { margin-left: 8px; }
+  .galaxy-counts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; color: var(--fg-2); }
+  #galaxyCounts { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  #galaxyCounts span { white-space: nowrap; font-variant-numeric: tabular-nums; }
   #galaxyAutoRotate[aria-pressed="true"] { background: var(--amber); color: var(--bg-0); border-color: var(--amber); }
-  .galaxy-details { position: absolute; right: 16px; top: 124px; width: 260px; pointer-events: auto; }
+  .galaxy-details { position: absolute; right: 16px; top: 156px; width: 260px; pointer-events: auto; }
   .galaxy-details select { width: 100%; margin-bottom: 18px; }
   #galaxyName { font-size: 16px; color: var(--fg-1); margin: 0 0 10px; }
   #galaxyDetails { white-space: pre-line; overflow-wrap: anywhere; color: var(--fg-2); line-height: 1.8; margin-bottom: 16px; }
@@ -136,6 +139,9 @@
       <button id="galaxyZoomIn" class="l7-btn l7-btn--outline btn-sm" aria-label="Zoom in">+</button>
       <label><input id="galaxyGrid" type="checkbox" checked> Grid</label>
       <label><input id="galaxyStems" type="checkbox" checked> Altitude stems</label>
+    </div>
+    <div class="galaxy-counts" role="group" aria-label="Planet counts by team">
+      <span>Planets</span><div id="galaxyCounts"></div>
     </div>
   </div>
   <aside class="galaxy-details">

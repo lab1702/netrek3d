@@ -1,11 +1,12 @@
 // Interactive perspective galaxy map. Game coordinates stay X/Y/Z throughout.
 "use strict";
 
-function galaxyViewport(width, height) {
+function galaxyViewport(width, height, toolbarBottom = 0) {
   const narrow = width < 760;
-  return { x: 16, y: narrow ? 156 : 105,
+  const y = Math.max(narrow ? 156 : 105, toolbarBottom + 16);
+  return { x: 16, y,
     w: Math.max(1, width - (narrow ? 32 : 310)),
-    h: Math.max(1, height - (narrow ? 375 : 145)) };
+    h: Math.max(1, height - y - (narrow ? 219 : 40)) };
 }
 function galaxyProjection(p, view, rect) {
   const dx = p.x - view.center.x, dy = p.y - view.center.y, dz = p.z - view.center.z;
@@ -55,6 +56,8 @@ class GalaxyMap {
     ui.addEventListener('pointerdown', stopRotation);
     ui.addEventListener('wheel', () => this.setAutoRotate(false), {passive:true});
     this.select = ui.querySelector('#galaxySelect');
+    this.toolbar = ui.querySelector('.galaxy-toolbar');
+    this.counts = ui.querySelector('#galaxyCounts'); this.lastCounts = '';
     this.title = ui.querySelector('#galaxyName'); this.details = ui.querySelector('#galaxyDetails');
     this.lock = ui.querySelector('#galaxyLock'); this.lastDetails = '';
     ui.querySelectorAll('[data-map-view]').forEach(button => button.addEventListener('click', () => {
@@ -162,7 +165,8 @@ class GalaxyMap {
       this.autoRotateTime=now;
     }
     this.planets=planets;
-    const rect=galaxyViewport(width,height);
+    this.updateCounts(planets,colors);
+    const rect=galaxyViewport(width,height,14+(this.toolbar.offsetHeight||0));
     if(this.follow) this.view.center={x:you.x,y:you.y,z:you.z};
     const project=p=>galaxyProjection(p,this.view,rect);
     const ships=galaxyVisibleShips(you,players);
@@ -278,6 +282,14 @@ class GalaxyMap {
     ctx.restore();
     this.updateDetails(selected,you);
     this.ui.querySelector('#galaxyScale').textContent=`${this.view.zoom.toFixed(1)}× · ${this.follow?'Following your ship':'Galaxy centered'}`;
+  }
+  updateCounts(planets,colors) {
+    const counts = {};
+    for (const p of planets) counts[p.o] = (counts[p.o] || 0) + 1;
+    const html = [['FED','F','Federation'],['ROM','R','Romulan'],['KLI','K','Klingon'],['ORI','O','Orion'],['IND','I','Independent']]
+      .map(([label,team,name]) => `<span style="color:${colors[team]||colors.I}" title="${name}">${label}: ${counts[team]||0}</span>`)
+      .join('');
+    if (html !== this.lastCounts) { this.counts.innerHTML=html; this.lastCounts=html; }
   }
   updateDetails(selected,you) {
     let title='Explore the galaxy',details='Select a planet or ship to inspect its position and distance.';
