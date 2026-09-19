@@ -225,7 +225,7 @@ class GalaxyMap {
     }
     for(const tp of torps) {
       const p=project(tp);if(!p)continue;
-      const radius=Math.max(1,Math.min(2.5,200*p.scale));
+      const radius=Math.max(0.5,Math.min(1.25,100*p.scale));
       ctx.fillStyle=colors[tp.tm]||colors.I;
       ctx.globalAlpha=0.2;
       ctx.beginPath();ctx.arc(p.x,p.y,radius*2,0,Math.PI*2);ctx.fill();
